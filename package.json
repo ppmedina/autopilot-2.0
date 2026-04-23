@@ -1,0 +1,17 @@
+{
+  "name": "cancha-cristal",
+  "version": "1.0.0",
+  "description": "Cancha de fútbol con superficie de cristal — Three.js + Vite",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lil-gui": "^0.19.2",
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
