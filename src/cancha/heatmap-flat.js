@@ -23,10 +23,10 @@ export function createHeatmapFlat(scene, datos = DATOS_EJEMPLO, opciones = {}) {
   const {
     ancho    = 105,
     alto     = 68,
-    offsetY  = 0.5,
+    offsetY  = 2.0,
     resW     = 1024,
     resH     = 664,
-    opacidad = 0.9,
+    opacidad = 0.6,
   } = opciones
 
   function interpolar(dat, u, v) {
@@ -69,7 +69,6 @@ export function createHeatmapFlat(scene, datos = DATOS_EJEMPLO, opciones = {}) {
         const grad = ctx.createRadialGradient(px, py, 0, px, py, radio)
 
         if (valor >= 0.75) {
-          // Zona muy caliente — blanco → cyan claro → cyan → azul eléctrico
           grad.addColorStop(0.00, `rgba(255, 255, 255, ${valor * 0.95})`)
           grad.addColorStop(0.15, `rgba(180, 240, 255, ${valor * 0.90})`)
           grad.addColorStop(0.35, `rgba(60,  200, 255, ${valor * 0.75})`)
@@ -77,14 +76,12 @@ export function createHeatmapFlat(scene, datos = DATOS_EJEMPLO, opciones = {}) {
           grad.addColorStop(0.80, `rgba(0,    60, 160, ${valor * 0.15})`)
           grad.addColorStop(1.00, `rgba(0,    20,  80, 0)`)
         } else if (valor >= 0.4) {
-          // Zona media — azul eléctrico → azul medio → azul oscuro
           grad.addColorStop(0.00, `rgba(30,  160, 255, ${valor * 0.85})`)
           grad.addColorStop(0.25, `rgba(10,  100, 210, ${valor * 0.70})`)
           grad.addColorStop(0.55, `rgba(0,    55, 150, ${valor * 0.40})`)
           grad.addColorStop(0.80, `rgba(0,    25,  90, ${valor * 0.15})`)
           grad.addColorStop(1.00, `rgba(0,    10,  50, 0)`)
         } else {
-          // Zona fría — azul marino muy tenue
           grad.addColorStop(0.00, `rgba(10,   60, 160, ${valor * 0.55})`)
           grad.addColorStop(0.40, `rgba(5,    30, 100, ${valor * 0.25})`)
           grad.addColorStop(1.00, `rgba(0,    10,  50, 0)`)
@@ -98,13 +95,17 @@ export function createHeatmapFlat(scene, datos = DATOS_EJEMPLO, opciones = {}) {
       }
     }
 
-    // Blur para fusionar y suavizar
+    // Blur en canvas transparente — fondo clearRect garantiza alpha=0 en zonas vacías
     const canvasBlur = document.createElement('canvas')
     canvasBlur.width  = resW
     canvasBlur.height = resH
     const ctxB = canvasBlur.getContext('2d')
+    // Fondo negro puro — con AdditiveBlending el negro se suma como cero (invisible)
+    ctxB.fillStyle = '#000000'
+    ctxB.fillRect(0, 0, resW, resH)
     ctxB.filter = `blur(${Math.round(resW * 0.02)}px)`
     ctxB.drawImage(canvas, 0, 0)
+    ctxB.filter = 'none'
 
     return new THREE.CanvasTexture(canvasBlur)
   }
@@ -116,15 +117,16 @@ export function createHeatmapFlat(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     transparent: true,
     opacity:     opacidad,
     depthWrite:  false,
+    depthTest:   false,  // ← ignora el depth buffer, siempre visible debajo de todo
     blending:    THREE.AdditiveBlending,
     side:        THREE.DoubleSide,
   })
 
   const mesh = new THREE.Mesh(geo, mat)
   mesh.rotation.x = -Math.PI / 2
-  mesh.position.y  = offsetY
+  mesh.position.y  = 0.5
   mesh.visible     = false
-  mesh.renderOrder = 1
+  mesh.renderOrder = 0
   scene.add(mesh)
 
   const btn = document.createElement('button')

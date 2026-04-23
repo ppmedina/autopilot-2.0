@@ -43,14 +43,20 @@ function crearTexturaDash(intensidad = 1.0) {
   return tex
 }
 
-// ── Textura sólida para línea disparo ────────────────────────────────────────
+// ── Textura con gradiente de opacidad para línea disparo ─────────────────────
 function crearTexturaDisparo(color) {
-  const w = 64, h = 8
+  const w = 256, h = 8
   const canvas = document.createElement('canvas')
   canvas.width = w; canvas.height = h
   const ctx = canvas.getContext('2d')
   const c = new THREE.Color(color)
-  ctx.fillStyle = `rgb(${Math.round(c.r*255)},${Math.round(c.g*255)},${Math.round(c.b*255)})`
+  const r = Math.round(c.r * 255)
+  const g = Math.round(c.g * 255)
+  const b = Math.round(c.b * 255)
+  const grad = ctx.createLinearGradient(0, 0, w, 0)
+  grad.addColorStop(0.0, `rgba(${r},${g},${b},0.3)`)   // origen — 30% opacidad
+  grad.addColorStop(1.0, `rgba(${r},${g},${b},0.9)`)   // destino — 90% opacidad
+  ctx.fillStyle = grad
   ctx.fillRect(0, 0, w, h)
   return new THREE.CanvasTexture(canvas)
 }
@@ -142,11 +148,15 @@ export function createFlechasDash(scene, flechas = FLECHAS_DASH_EJEMPLO, opcione
 
   const {
     offsetY         = 0.4,
-    colorDisparo    = 0xAAEE22,  // color de la línea sólida de disparo
+    colorDisparo    = 0xD6F221,  // color de la línea sólida de disparo
     anchoDash       = 0.8,       // ancho destino de la línea dash
-    anchoOrigenDash = 1.1,       // ancho origen de la línea dash
-    anchoDisparo    = 0.25,      // ancho de la línea de disparo
+    anchoOrigenDash = 2.5,       // ancho origen de la línea dash
+    anchoDisparo    = 0.5,      // ancho de la línea de disparo
     onToggle        = null,
+    getPhi          = null,      // función para detectar vista actual
+    radioAro        = 4.5,       // radio en vista perspectiva
+    radioAroTop     = 6.5,       // radio en vista top (más grande por proyección)
+    umbralTop       = 1.1,       // phi > umbral = vista top
   } = opciones
 
   // Color de punta dash: stop final del gradiente azul
@@ -167,11 +177,14 @@ export function createFlechasDash(scene, flechas = FLECHAS_DASH_EJEMPLO, opcione
     const fin    = new THREE.Vector3(flecha.a.x,  0, flecha.a.z)
     const dir    = new THREE.Vector3().subVectors(fin, inicio).normalize()
 
-    // radioAro: radio visual del aro de la card en unidades de escena
-    // Ajusta este valor si el aro de tus cards es más grande o pequeño
-    const radioAro      = 4.5
-    const inicioAcortado = new THREE.Vector3().copy(inicio).addScaledVector(dir,  radioAro)
-    const finAcortado    = new THREE.Vector3().copy(fin).addScaledVector(dir,    -radioAro)
+    // radioAro: radio visual del aro — cambia según vista top o perspectiva
+    // radioDestino puede sobreescribirse por flecha (útil para porterías sin jugador)
+    const phi             = getPhi ? getPhi() : 0.5
+    const esTop           = phi > umbralTop
+    const radio           = esTop ? radioAroTop : radioAro
+    const radioDestino    = flecha.radioDestino ?? radio
+    const inicioAcortado  = new THREE.Vector3().copy(inicio).addScaledVector(dir,  radio)
+    const finAcortado     = new THREE.Vector3().copy(fin).addScaledVector(dir,    -radioDestino)
 
     const tex = esDash
       ? crearTexturaDash(1.0)
@@ -187,7 +200,7 @@ export function createFlechasDash(scene, flechas = FLECHAS_DASH_EJEMPLO, opcione
 
     const geo = esDash
       ? crearGeoTrapecio(inicioAcortado, finAcortado, anchoOrigenDash, anchoDash)
-      : crearGeoLinea(inicioAcortado, finAcortado, anchoDisparo)
+      : crearGeoTrapecio(inicioAcortado, finAcortado, anchoDisparo * 0.3, anchoDisparo)
 
     const mesh = new THREE.Mesh(geo, mat)
     mesh.renderOrder = 3

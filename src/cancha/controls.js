@@ -6,13 +6,13 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
   // ── Cámara orbital ──
   let isDragging  = false
   let prevX = 0, prevY = 0
-  let theta = 0, phi = 0.5, orbitRadius = 110
+  let theta = 0, phi = 0.51, orbitRadius = 130
   let autoRotate  = false
 
   // ── Animación entre vistas ──
   let targetTheta  = theta
-  let targetPhi    = phi
-  let targetRadius = orbitRadius
+  let targetPhi    = 0.51
+  let targetRadius = 130
   let isAnimating  = false
 
   function animateTo(toTheta, toPhi, toRadius) {

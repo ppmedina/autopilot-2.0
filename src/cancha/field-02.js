@@ -132,6 +132,7 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
           }
           if (child.name === 'franjas' || child.name === 'franjas001') {
             child.material = matFranjas
+            child.visible = false 
           }
           if (child.name === 'grid-10x6' || child.name === 'franjas001') {
             child.material = matGrids

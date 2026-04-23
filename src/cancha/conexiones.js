@@ -32,47 +32,6 @@ const CONEXIONES_EJEMPLO = [
   { de: 24, a: 14, intensidad: 0.4 },
 ]
 
-function crearGradienteEmissive() {
-  const canvas  = document.createElement('canvas')
-  canvas.width  = 256
-  canvas.height = 256
-  const ctx     = canvas.getContext('2d')
-  const gradient = ctx.createLinearGradient(0, 256, 0, 0)
-  gradient.addColorStop(0.5, '#020204')
-  gradient.addColorStop(0.8, '#0d1626')
-  gradient.addColorStop(1.0, '#00aaff')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, 256, 256)
-  return new THREE.CanvasTexture(canvas)
-}
-
-function crearGeoTrapecio(inicio, fin, anchoOrigen, anchoDestino) {
-  const dir  = new THREE.Vector3().subVectors(fin, inicio).normalize()
-  const perp = new THREE.Vector3(-dir.z, 0, dir.x)
-
-  const h0 = anchoOrigen  * 0.2
-  const h1 = anchoDestino * 0.27
-
-  const v0 = new THREE.Vector3().copy(inicio).addScaledVector(perp,  h0)
-  const v1 = new THREE.Vector3().copy(inicio).addScaledVector(perp, -h0)
-  const v2 = new THREE.Vector3().copy(fin).addScaledVector(perp,    -h1)
-  const v3 = new THREE.Vector3().copy(fin).addScaledVector(perp,     h1)
-
-  const positions = new Float32Array([
-    v0.x, v0.y, v0.z,
-    v1.x, v1.y, v1.z,
-    v2.x, v2.y, v2.z,
-    v3.x, v3.y, v3.z,
-  ])
-  const uvs     = new Float32Array([0,0, 0,1, 1,1, 1,0])
-  const indices = new Uint16Array([0, 1, 2, 0, 2, 3])
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geo.setAttribute('uv',       new THREE.BufferAttribute(uvs,       2))
-  geo.setIndex(new THREE.BufferAttribute(indices, 1))
-  return geo
-}
-
 function crearTexturaFlujo(intensidad) {
   const w = 256, h = 32
   const canvas = document.createElement('canvas')
@@ -94,6 +53,50 @@ function crearTexturaFlujo(intensidad) {
   ctx.fillStyle = gradV
   ctx.fillRect(0, 0, w, h)
   return new THREE.CanvasTexture(canvas)
+}
+
+// ── Calcula los 4 vértices del trapecio como Float32Array ──────────────────
+// Reutilizable para actualizar BufferAttribute sin crear geometría nueva
+const _dir  = new THREE.Vector3()
+const _perp = new THREE.Vector3()
+const _v0   = new THREE.Vector3()
+const _v1   = new THREE.Vector3()
+const _v2   = new THREE.Vector3()
+const _v3   = new THREE.Vector3()
+
+function calcularVerticesTrapecio(inicio, fin, anchoOrigen, anchoDestino, out) {
+  _dir.subVectors(fin, inicio).normalize()
+  _perp.set(-_dir.z, 0, _dir.x)
+
+  const h0 = anchoOrigen  * 0.2
+  const h1 = anchoDestino * 0.27
+
+  _v0.copy(inicio).addScaledVector(_perp,  h0)
+  _v1.copy(inicio).addScaledVector(_perp, -h0)
+  _v2.copy(fin).addScaledVector(_perp,    -h1)
+  _v3.copy(fin).addScaledVector(_perp,     h1)
+
+  out[0] = _v0.x; out[1]  = _v0.y; out[2]  = _v0.z
+  out[3] = _v1.x; out[4]  = _v1.y; out[5]  = _v1.z
+  out[6] = _v2.x; out[7]  = _v2.y; out[8]  = _v2.z
+  out[9] = _v3.x; out[10] = _v3.y; out[11] = _v3.z
+}
+
+// ── Crea geometría inicial del trapecio con BufferAttribute dinámico ────────
+function crearGeoTrapecioMutable(inicio, fin, anchoOrigen, anchoDestino) {
+  const positions = new Float32Array(12)
+  calcularVerticesTrapecio(inicio, fin, anchoOrigen, anchoDestino, positions)
+
+  const uvs     = new Float32Array([0,0, 0,1, 1,1, 1,0])
+  const indices = new Uint16Array([0, 1, 2, 0, 2, 3])
+
+  const geo = new THREE.BufferGeometry()
+  const posAttr = new THREE.BufferAttribute(positions, 3)
+  posAttr.setUsage(THREE.DynamicDrawUsage) // ← clave para updates eficientes
+  geo.setAttribute('position', posAttr)
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geo.setIndex(new THREE.BufferAttribute(indices, 1))
+  return geo
 }
 
 export function createConexiones(
@@ -128,41 +131,75 @@ export function createConexiones(
   const mapaJugadores = {}
   jugadores.forEach(j => { mapaJugadores[j.numero] = j })
 
-  // ── Material compartido transparent ──
-  const matTransparente = new THREE.MeshPhysicalMaterial({
-    color:             0x32699f,
-    emissive:          0x3750b3,
-    emissiveIntensity: 0.5,
-    // emissiveMap:       crearGradienteEmissive(),
-    transmission:      1.0,
-    roughness:         0.5,
-    metalness:         0.45,
-    thickness:         0.5,
-    transparent:       true,
-    opacity:           0.34,
-    // side:              THREE.DoubleSide,
-    envMapIntensity:   2.9,
-    reflectivity:      0.5,
-    ior:               1.9,
-    depthTest:         true,
-    // depthWrite:        false,
-  })
+  // ── Textura canvas que imita el aro de las jugador-cards ──
+  function crearTexturaAro() {
+    const size = 256
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = size
+    const ctx = canvas.getContext('2d')
+    const cx = size / 2, cy = size / 2, r = size / 2 - 4
 
-  // ── GUI — objeto params separado para evitar conflicto con THREE.Color ──
-  const params = {
-    color:    '#173858',
-    emissive: '#7BE6F1',
+    // Fondo oscuro
+    const bgGrad = ctx.createRadialGradient(cx, cy - 10, 5, cx, cy, r)
+    bgGrad.addColorStop(0.0, '#1a2a4a')
+    bgGrad.addColorStop(1.0, '#0a0f1e')
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fillStyle = bgGrad
+    ctx.fill()
+
+    // Glow exterior
+    ctx.save()
+    ctx.shadowColor = '#4DAAFF'
+    ctx.shadowBlur  = 30
+    const gradBorde = ctx.createLinearGradient(cx, cy - r, cx, cy + r)
+    gradBorde.addColorStop(0.0, 'rgba(10,  36,  81, 0.4)')
+    gradBorde.addColorStop(0.5, 'rgba(40,  140, 255, 0.9)')
+    gradBorde.addColorStop(1.0, 'rgba(80,  200, 255, 1.0)')
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.strokeStyle = gradBorde
+    ctx.lineWidth   = 10
+    ctx.stroke()
+    ctx.restore()
+
+    // Borde interior sutil
+    ctx.beginPath()
+    ctx.arc(cx, cy, r - 5, 0, Math.PI * 2)
+    ctx.strokeStyle = 'rgba(100, 180, 255, 0.3)'
+    ctx.lineWidth   = 2
+    ctx.stroke()
+
+    return new THREE.CanvasTexture(canvas)
   }
 
+  const texturaAro = crearTexturaAro()
+
+  // ── Material compartido transparent — inspirado en el aro de las cards ──
+  const matTransparente = new THREE.MeshPhysicalMaterial({
+    color:             0x0a1628,    // azul muy oscuro del fondo del aro
+    emissive:          0x4DAAFF,    // color del glow del aro
+    emissiveIntensity: 0.4,
+    emissiveMap:       texturaAro,  // textura canvas del aro
+    transmission:      0.6,
+    roughness:         0.1,
+    metalness:         0.2,
+    thickness:         0.5,
+    transparent:       true,
+    opacity:           0.85,
+    envMapIntensity:   2.0,
+    reflectivity:      0.7,
+    ior:               1.5,
+    depthTest:         true,
+    side:              THREE.DoubleSide,
+  })
+
+  // ── GUI ──
+  const params = { color: '#0a1628', emissive: '#4DAAFF' }
   const gui    = new GUI({ title: 'Ficha controls' })
   const folder = gui.addFolder('Transparent')
-
-  folder.addColor(params, 'color').name('Color').onChange(v => {
-    matTransparente.color.set(v)
-  })
-  folder.addColor(params, 'emissive').name('Emissive').onChange(v => {
-    matTransparente.emissive.set(v)
-  })
+  folder.addColor(params, 'color').name('Color').onChange(v => { matTransparente.color.set(v) })
+  folder.addColor(params, 'emissive').name('Emissive').onChange(v => { matTransparente.emissive.set(v) })
   folder.add(matTransparente, 'emissiveIntensity', 0, 5,   0.1 ).name('Glow intensity')
   folder.add(matTransparente, 'transmission',      0, 1,   0.01).name('Transmisión')
   folder.add(matTransparente, 'roughness',         0, 1,   0.01).name('Rugosidad')
@@ -174,7 +211,7 @@ export function createConexiones(
   folder.add(matTransparente, 'ior',               1, 2.5, 0.01).name('IOR')
   folder.open()
 
-  // ── Contenedor overlay ──
+  // ── Labels overlay ──
   const labelsContainer = document.createElement('div')
   labelsContainer.style.cssText = `
     position: absolute;
@@ -216,28 +253,19 @@ export function createConexiones(
 
       if (child.name === nombreCentro) {
         child.material = new THREE.MeshStandardMaterial({
-          color:             0x122C7E,
-          roughness:         0.4,
-          emissive:          0x0a1550,
-          emissiveIntensity: 0.5,
-          transparent:       false,
-          opacity:           1,
-          depthTest:         true,
-          depthWrite:        true,
+          color: 0x122C7E, roughness: 0.4,
+          emissive: 0x0a1550, emissiveIntensity: 0.5,
+          transparent: false, opacity: 1,
+          depthTest: true, depthWrite: true,
         })
         child.layers.set(0)
       }
       if (child.name === nombreBorde) {
         child.material = new THREE.MeshStandardMaterial({
-          color:             0x1A3A9E,
-          emissive:          0x0a1550,
-          emissiveIntensity: 0.5,
-          metalness:         0.1,
-          roughness:         0.05,
-          transparent:       false,
-          opacity:           1,
-          depthTest:         true,
-          depthWrite:        true,
+          color: 0x1A3A9E, emissive: 0x0a1550, emissiveIntensity: 0.5,
+          metalness: 0.1, roughness: 0.05,
+          transparent: false, opacity: 1,
+          depthTest: true, depthWrite: true,
         })
         child.layers.set(0)
       }
@@ -260,9 +288,9 @@ export function createConexiones(
           clon.renderOrder = 2
           clon.scale.setScalar(escalaFicha)
           clon.position.set(jugador.x, fichaYBase, jugador.z)
-          clon.userData.esFicha    = true
-          clon.userData.jugadorX   = jugador.x
-          clon.userData.jugadorZ   = jugador.z
+          clon.userData.esFicha  = true
+          clon.userData.jugadorX = jugador.x
+          clon.userData.jugadorZ = jugador.z
           grupo.add(clon)
           crearLabelNumero(jugador.numero, jugador.x, jugador.z)
         })
@@ -297,10 +325,8 @@ export function createConexiones(
       const sprite = new THREE.Sprite(mat)
       sprite.position.set(jugador.x, fichaYBase, jugador.z)
       sprite.scale.set(radioNodo * 2, radioNodo * 2, 1)
-      sprite.renderOrder       = 2
-      sprite.userData.esFicha  = true
-      sprite.userData.jugadorX = jugador.x
-      sprite.userData.jugadorZ = jugador.z
+      sprite.renderOrder      = 2
+      sprite.userData.esFicha = true
       sprite.layers.set(0)
       grupo.add(sprite)
       crearLabelNumero(jugador.numero, jugador.x, jugador.z)
@@ -309,8 +335,13 @@ export function createConexiones(
 
   if (usarGLB) { crearNodosGLB() } else { crearNodosCanvas() }
 
-  // ── Crear meshes de conexión ──
-  const lineasData = []
+  // ── Crear meshes de conexión con geometría mutable ──────────────────────
+  const lineasData  = []
+  const _tmpVerts   = new Float32Array(12) // buffer reutilizable para updates
+
+  // Posición inicial provisional para crear geometría — se actualizará en tickLineas
+  const _origenTmp = new THREE.Vector3(0, alturaBase, 0)
+  const _finTmp    = new THREE.Vector3(1, alturaBase, 0)
 
   conexiones.forEach(con => {
     const jDe = mapaJugadores[con.de]
@@ -321,25 +352,21 @@ export function createConexiones(
     const tex        = crearTexturaFlujo(intensidad)
 
     const mat = new THREE.MeshBasicMaterial({
-      map:         tex,
-      transparent: true,
-      depthWrite:  false,
-      depthTest:   true,
-      blending:    THREE.AdditiveBlending,
-      side:        THREE.DoubleSide,
+      map: tex, transparent: true, depthWrite: false,
+      depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     })
     const matGlow = new THREE.MeshBasicMaterial({
-      map:         tex,
-      transparent: true,
-      depthWrite:  false,
-      depthTest:   true,
-      blending:    THREE.AdditiveBlending,
-      side:        THREE.DoubleSide,
-      opacity:     0.25,
+      map: tex, transparent: true, depthWrite: false,
+      depthTest: true, blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide, opacity: 0.25,
     })
 
-    const mesh     = new THREE.Mesh(new THREE.BufferGeometry(), mat)
-    const meshGlow = new THREE.Mesh(new THREE.BufferGeometry(), matGlow)
+    // ← Geometría mutable con DynamicDrawUsage — nunca se recrea
+    const geoMesh = crearGeoTrapecioMutable(_origenTmp, _finTmp, anchoOrigen, anchoDestino * intensidad)
+    const geoGlow = crearGeoTrapecioMutable(_origenTmp, _finTmp, anchoOrigen * 1.5, anchoDestino * intensidad * 2.5)
+
+    const mesh     = new THREE.Mesh(geoMesh, mat)
+    const meshGlow = new THREE.Mesh(geoGlow, matGlow)
 
     mesh.renderOrder     = 1
     meshGlow.renderOrder = 1
@@ -352,8 +379,10 @@ export function createConexiones(
     lineasData.push({ mesh, meshGlow, jDe, jA, intensidad })
   })
 
-  // ── Actualizar según vista ──
+  // ── Tick optimizado — solo actualiza vértices, nunca recrea geometría ──
   let ultimoPhi = null
+  const _inicio = new THREE.Vector3()
+  const _fin    = new THREE.Vector3()
 
   function tickLineas() {
     const phi = getPhi ? getPhi() : 0.5
@@ -365,25 +394,24 @@ export function createConexiones(
     const fichaY = esTop ? fichaYTop    : fichaYBase
 
     grupo.traverse(child => {
-      if (child.userData.esFicha === true) {
-        child.position.y = fichaY
-      }
+      if (child.userData.esFicha === true) child.position.y = fichaY
     })
 
     lineasData.forEach(({ mesh, meshGlow, jDe, jA, intensidad }) => {
-      mesh.material.depthTest       = true
-      meshGlow.material.depthTest   = true
-      mesh.material.needsUpdate     = true
-      meshGlow.material.needsUpdate = true
+      _inicio.set(jDe.x, lineaY, jDe.z)
+      _fin.set(jA.x, lineaY, jA.z)
 
-      const inicio = new THREE.Vector3(jDe.x, lineaY, jDe.z)
-      const fin    = new THREE.Vector3(jA.x,  lineaY, jA.z)
+      // ── Actualizar mesh principal ──
+      calcularVerticesTrapecio(_inicio, _fin, anchoOrigen, anchoDestino * intensidad, _tmpVerts)
+      mesh.geometry.attributes.position.array.set(_tmpVerts)
+      mesh.geometry.attributes.position.needsUpdate = true
+      mesh.geometry.computeBoundingSphere()
 
-      mesh.geometry.dispose()
-      mesh.geometry = crearGeoTrapecio(inicio, fin, anchoOrigen, anchoDestino * intensidad)
-
-      meshGlow.geometry.dispose()
-      meshGlow.geometry = crearGeoTrapecio(inicio, fin, anchoOrigen * 1.5, anchoDestino * intensidad * 2.5)
+      // ── Actualizar glow ──
+      calcularVerticesTrapecio(_inicio, _fin, anchoOrigen * 1.5, anchoDestino * intensidad * 2.5, _tmpVerts)
+      meshGlow.geometry.attributes.position.array.set(_tmpVerts)
+      meshGlow.geometry.attributes.position.needsUpdate = true
+      meshGlow.geometry.computeBoundingSphere()
     })
   }
 

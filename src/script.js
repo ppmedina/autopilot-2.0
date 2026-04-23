@@ -14,7 +14,7 @@ import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js'
 import { createHeatmap }    from './cancha/heatmap.js'
-import { createConexiones } from './cancha/conexiones.js'
+import { createConexionesV2 } from './cancha/conexiones-v2.js'
 import { createHeatmapFlat } from './cancha/heatmap-flat.js'
 import { createHeatmapZona } from './cancha/heatmap-zona.js'
 import { createJugadorCards } from './cancha/jugador-card.js'
@@ -33,9 +33,8 @@ createLights(scene)
 const { fieldMaterial, bgTexture } = createField(scene)
 const { allLines, setLinesColor }  = createLines(scene)
 createGoals(scene)
-// createTeam(scene)
 createGrid(scene, 0.35, 0)
-// createHeatmap(scene)
+createHeatmap(scene)
 createHeatmapFlat(scene)
 createHeatmapZona(scene, [{
   x: 13, z: -25,
@@ -61,18 +60,15 @@ const { grupo: grupoEquipo, tickEquipo } = createEquipoCard(scene, {
 const porNumero = (n) => JUGADORES.find(j => j.numero === n)
 const jxz       = (n) => { const j = porNumero(n); return { x: j.x, z: j.z } }
 
-// ── Flechas — referenciando posiciones desde JUGADORES ──
+// ── Flechas ──
 const FLECHAS = [
   { de: jxz(5), a: jxz(9),          estilo: 'pase'       },
   { de: jxz(9), a: { x: 52, z: 0 }, estilo: 'disparo'    },
   { de: jxz(6), a: jxz(5),          estilo: 'movimiento' },
   { de: jxz(6), a: jxz(9),          estilo: 'apoyo'      },
 ]
-
 const { grupo: grupoFlechas, tickFlechas, ocultarPuntas, mostrarPuntas } = createFlechas(
-  scene,
-  [],      // ← sin nodos propios — usa las cards de jugador
-  FLECHAS
+  scene, [], FLECHAS
 )
 
 // ── Flechas Flow ──
@@ -86,10 +82,10 @@ const { grupo: grupoFlechasFlow, tickFlechasFlow, ocultarPuntasFlow, mostrarPunt
 
 // ── Flechas Dash ──
 const FLECHAS_DASH = [
-  { de: jxz(5), a: jxz(9),          estilo: 'dash'    },
-  { de: jxz(6), a: jxz(5),          estilo: 'dash'    },
-  { de: jxz(9), a: { x: 52, z: 0 }, estilo: 'disparo' },
-  { de: jxz(6), a: jxz(9),          estilo: 'disparo' },
+  { de: jxz(5), a: jxz(9),              estilo: 'dash'    },
+  { de: jxz(6), a: jxz(5),              estilo: 'dash'    },
+  { de: jxz(6), a: jxz(9),              estilo: 'dash'    },
+  { de: jxz(9), a: { x: 51, z: -1 },   estilo: 'disparo', radioDestino: 0 },
 ]
 const { grupo: grupoFlechasDash, tickFlechasDash, ocultarPuntasDash, mostrarPuntasDash } = createFlechasDash(scene, FLECHAS_DASH)
 
@@ -102,21 +98,32 @@ const { tickCamera, getPhi } = createControls({
   setLinesColor,
 })
 
-// ── Conexiones ──
-const { grupo: grupoConexiones, labelsData, tickLineas } = createConexiones(
+// ── Conexiones V2 (sprites canvas) ──
+const CONEXIONES_V2 = [
+  { de:  5, a:  9, intensidad: 0.9 },
+  { de:  5, a:  6, intensidad: 0.8 },
+  { de:  5, a:  7, intensidad: 0.7 },
+  { de:  6, a:  9, intensidad: 0.7 },
+  { de:  6, a: 29, intensidad: 0.6 },
+  { de:  6, a:  4, intensidad: 0.6 },
+  { de:  9, a:  7, intensidad: 0.8 },
+  { de:  9, a: 10, intensidad: 0.9 },
+  { de:  7, a: 10, intensidad: 0.7 },
+  { de: 29, a:  4, intensidad: 0.5 },
+  { de: 29, a:  6, intensidad: 0.6 },
+]
+const { grupo: grupoConexionesV2, tickConexionesV2 } = createConexionesV2(
   scene,
-  undefined,
-  undefined,
+  JUGADORES,
+  CONEXIONES_V2,
   {
     getPhi,
     alturaBase:   -3,
     alturaCentro: 0,
     umbralTop:    1.1,
+    escalaFicha:  7.0,
   }
 )
-
-// ── Vector reutilizable para proyección ──
-const _labelPos = new THREE.Vector3()
 
 // ── Selective Bloom ──
 const bloomLayer = new THREE.Layers()
@@ -202,7 +209,7 @@ function animate() {
   allLines.forEach(m => { m.material.emissiveIntensity = pulse })
 
   tickCamera()
-  tickLineas()
+  tickConexionesV2(camera)
   tickEquipo(camera)
   tickFlechas(dt, camera)
   tickFlechasFlow(dt)
@@ -219,9 +226,11 @@ function animate() {
   const bg = scene.background
   scene.background = null
 
-  const jugadoresEranVisibles = grupoJugadores.visible
-  const equipoEraVisible      = grupoEquipo.visible
-  grupoJugadores.visible = false
+  const jugadoresEranVisibles   = grupoJugadores.visible
+  const equipoEraVisible        = grupoEquipo.visible
+  const conexionesV2EranVisible = grupoConexionesV2.visible
+  grupoJugadores.visible    = false
+  grupoConexionesV2.visible = false
   const spriteEquipo     = grupoEquipo.children.find(c => c.isSprite)
   const spriteEraVisible = spriteEquipo ? spriteEquipo.visible : false
   if (spriteEquipo) spriteEquipo.visible = false
@@ -234,8 +243,9 @@ function animate() {
   scene.traverse(restoreMaterials)
   scene.background = bg
 
-  grupoJugadores.visible = jugadoresEranVisibles
-  grupoEquipo.visible    = equipoEraVisible
+  grupoJugadores.visible    = jugadoresEranVisibles
+  grupoEquipo.visible       = equipoEraVisible
+  grupoConexionesV2.visible = conexionesV2EranVisible
   if (spriteEquipo) spriteEquipo.visible = spriteEraVisible
   mostrarPuntas()
   mostrarPuntasFlow()
@@ -243,18 +253,6 @@ function animate() {
 
   // 2. Render final
   finalComposer.render()
-
-  // 3. Labels DOM
-  const W = window.innerWidth
-  const H = window.innerHeight
-  labelsData.forEach(({ div, x, y, z }) => {
-    _labelPos.set(x, y, z)
-    _labelPos.project(camera)
-    const px = ( _labelPos.x * 0.5 + 0.5) * W
-    const py = (-_labelPos.y * 0.5 + 0.5) * H
-    div.style.left = (px - div.offsetWidth  * 0.5) + 'px'
-    div.style.top  = (py - div.offsetHeight * 0.5) + 'px'
-  })
 }
 
 animate()
