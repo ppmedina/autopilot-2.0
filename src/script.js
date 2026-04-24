@@ -23,6 +23,7 @@ import { createFlechas }      from './cancha/flechas.js'
 import { createFlechasFlow }  from './cancha/flechas-flow.js'
 import { createFlechasDash }  from './cancha/flechas-dash.js'
 import { JUGADORES }          from './cancha/jugadores.js'
+import { createFlechasParabola } from './cancha/flechas-parabola.js'
 
 // ── Inicializar escena base ──
 const { scene, camera, renderer } = createScene()
@@ -34,10 +35,15 @@ const { fieldMaterial, bgTexture } = createField(scene)
 const { allLines, setLinesColor }  = createLines(scene)
 createGoals(scene)
 createGrid(scene, 0.35, 0)
-createHeatmap(scene)
-createHeatmapFlat(scene)
+
+// ── Heatmap 3D ──
+const { meshGrid: heatmapGrid, meshSolid: heatmapSolid } = createHeatmap(scene)
+
+// ── Heatmap Flat ──
+const { mesh: meshHeatmapFlat } = createHeatmapFlat(scene)
+
 createHeatmapZona(scene, [{
-  x: 13, z: -25,
+  x: 30, z: -22,
   ancho: 40,
   alto: 18,
   color: 0x1E8CFF,
@@ -82,12 +88,27 @@ const { grupo: grupoFlechasFlow, tickFlechasFlow, ocultarPuntasFlow, mostrarPunt
 
 // ── Flechas Dash ──
 const FLECHAS_DASH = [
-  { de: jxz(5), a: jxz(9),              estilo: 'dash'    },
-  { de: jxz(6), a: jxz(5),              estilo: 'dash'    },
-  { de: jxz(6), a: jxz(9),              estilo: 'dash'    },
-  { de: jxz(9), a: { x: 51, z: -1 },   estilo: 'disparo', radioDestino: 0 },
+  { de: jxz(5), a: jxz(9),            estilo: 'dash'    },
+  { de: jxz(6), a: jxz(5),            estilo: 'dash'    },
+  { de: jxz(6), a: jxz(9),            estilo: 'dash'    },
+  { de: jxz(9), a: { x: 51, z: -1 }, estilo: 'disparo', radioDestino: 0 },
 ]
 const { grupo: grupoFlechasDash, tickFlechasDash, ocultarPuntasDash, mostrarPuntasDash } = createFlechasDash(scene, FLECHAS_DASH)
+
+// ── Flechas Parabólicas — pase largo #29 → #7 ──
+const FLECHAS_PARABOLA = [
+  { de: jxz(29), a: jxz(7), estilo: 'linea' },
+  { de: jxz(29), a: jxz(7), estilo: 'dash'  },
+]
+const { grupo: grupoParabola, tickFlechasParabola, ocultarPuntasParabola, mostrarPuntasParabola } = createFlechasParabola(
+  scene,
+  FLECHAS_PARABOLA,
+  {
+    offsetY:    4.0,
+    alturaArco: 18,
+    radioAro:   4.5,
+  }
+)
 
 // ── Controles ──
 const { tickCamera, getPhi } = createControls({
@@ -133,7 +154,7 @@ const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 })
 const materialsMap  = {}
 
 function darkenNonBloomed(obj) {
-  if (obj.isMesh && !bloomLayer.test(obj.layers)) {
+  if (obj.isMesh && !obj.layers.isEnabled(BLOOM_LAYER) && !obj.layers.isEnabled(CANCHA_BLOOM_LAYER)) {
     materialsMap[obj.uuid] = obj.material
     obj.material = darkMaterial
   }
@@ -152,7 +173,7 @@ bloomComposer.renderToScreen = false
 bloomComposer.addPass(new RenderPass(scene, camera))
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  1.5, 0.5, 0.0
+  0.9, 0.4, 0.0  // strength, radius, threshold
 )
 bloomComposer.addPass(bloomPass)
 
@@ -214,6 +235,7 @@ function animate() {
   tickFlechas(dt, camera)
   tickFlechasFlow(dt)
   tickFlechasDash(dt)
+  tickFlechasParabola(dt)
 
   // ── Fichas GLB miran hacia la cámara ──
   scene.traverse(child => {
@@ -222,21 +244,26 @@ function animate() {
     }
   })
 
-  // 1. Bloom
+  // 1. Bloom — ocultar todo lo que no debe recibir bloom
   const bg = scene.background
   scene.background = null
 
   const jugadoresEranVisibles   = grupoJugadores.visible
   const equipoEraVisible        = grupoEquipo.visible
   const conexionesV2EranVisible = grupoConexionesV2.visible
+  const heatmapFlatEraVisible   = meshHeatmapFlat ? meshHeatmapFlat.visible : false
+
   grupoJugadores.visible    = false
   grupoConexionesV2.visible = false
+  if (meshHeatmapFlat) meshHeatmapFlat.visible = false
+
   const spriteEquipo     = grupoEquipo.children.find(c => c.isSprite)
   const spriteEraVisible = spriteEquipo ? spriteEquipo.visible : false
   if (spriteEquipo) spriteEquipo.visible = false
   ocultarPuntas()
   ocultarPuntasFlow()
   ocultarPuntasDash()
+  ocultarPuntasParabola()
 
   scene.traverse(darkenNonBloomed)
   bloomComposer.render()
@@ -246,10 +273,12 @@ function animate() {
   grupoJugadores.visible    = jugadoresEranVisibles
   grupoEquipo.visible       = equipoEraVisible
   grupoConexionesV2.visible = conexionesV2EranVisible
-  if (spriteEquipo) spriteEquipo.visible = spriteEraVisible
+  if (meshHeatmapFlat) meshHeatmapFlat.visible = heatmapFlatEraVisible
+  if (spriteEquipo)    spriteEquipo.visible     = spriteEraVisible
   mostrarPuntas()
   mostrarPuntasFlow()
   mostrarPuntasDash()
+  mostrarPuntasParabola()
 
   // 2. Render final
   finalComposer.render()

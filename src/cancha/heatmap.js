@@ -212,7 +212,7 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
   const matGrid = new THREE.LineBasicMaterial({
     vertexColors: true,
     transparent:  true,
-    opacity:      0.5,
+    opacity:      0.68,
   })
 
   const matSolid = new THREE.MeshBasicMaterial({

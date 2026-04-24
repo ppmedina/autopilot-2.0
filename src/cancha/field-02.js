@@ -6,7 +6,6 @@ import GUI from 'lil-gui'
 
 export const CANCHA_BLOOM_LAYER = 1
 
-// ── Función para ajustar el aspect ratio del background ──
 function ajustarBackground(tex) {
   if (!tex || !tex.image) return
   const canvasAspect = window.innerWidth / window.innerHeight
@@ -29,7 +28,6 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
     rotacion = { x: 0, y: 0, z: 0 },
   } = opciones
 
-  // ── Fondo fijo PNG ajustado al ancho de la ventana ──
   const bgTexture = new THREE.TextureLoader().load('/estadio.png', (tex) => {
     ajustarBackground(tex)
   })
@@ -39,7 +37,6 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
     ajustarBackground(bgTexture)
   })
 
-  // ── HDR solo para reflejos ──
   new RGBELoader().load('/stadium.hdr', (hdrTexture) => {
     hdrTexture.mapping = THREE.EquirectangularReflectionMapping
     scene.environment  = hdrTexture
@@ -48,15 +45,12 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
 
     loader.load(
       ruta,
-
       (gltf) => {
 
-        // ── Detectar nombres de piezas ──
         gltf.scene.traverse((child) => {
           if (child.isMesh) console.log('Mesh:', child.name)
         })
 
-        // ── Material Superficie ──
         const matCapa01 = new THREE.MeshPhysicalMaterial({
           color:        0x322f31,
           metalness:    0,
@@ -68,18 +62,16 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
           opacity:      0.85,
         })
 
-        // ── Material capa brillante ──
         const matCapa02 = new THREE.MeshPhysicalMaterial({
           color:             0x1D272F,
           emissive:          0x7BE6F1,
-          emissiveIntensity: 0.2,
+          emissiveIntensity: 0.5,
           roughness:         0.05,
           metalness:         0.1,
           side:              THREE.DoubleSide,
           envMapIntensity:   2.0,
         })
 
-        // ── Material capa final ──
         const matCapa03 = new THREE.MeshPhysicalMaterial({
           color:           0x322f31,
           transmission:    0.56,
@@ -93,7 +85,6 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
           ior:             3.2,
         })
 
-        // Material para las franjas del modelo
         const matFranjas = new THREE.MeshPhysicalMaterial({
           color:           0xcce0ff,
           transmission:    0.5,
@@ -105,7 +96,6 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
           envMapIntensity: 2.0,
         })
 
-        // Material para los grids
         const matGrids = new THREE.MeshPhysicalMaterial({
           color:           0xcce0ff,
           transmission:    0.5,
@@ -118,11 +108,10 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
           wireframe:       true,
         })
 
-        // ── Aplicar materiales y renderOrder ──
         gltf.scene.traverse((child) => {
           if (!child.isMesh) return
 
-          child.renderOrder = 1  // ← cancha en orden 1, líneas también en 1, fichas en 2
+          child.renderOrder = 1
 
           if (child.name === 'capa-01') child.material = matCapa01
           if (child.name === 'capa-03') child.material = matCapa03
@@ -132,14 +121,13 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
           }
           if (child.name === 'franjas' || child.name === 'franjas001') {
             child.material = matFranjas
-            child.visible = false 
+            child.visible = false
           }
           if (child.name === 'grid-10x6' || child.name === 'franjas001') {
             child.material = matGrids
           }
         })
 
-        // ── lil-gui ──
         function addMaterialFolder(gui, nombre, material, colorHex) {
           const folder = gui.addFolder(nombre)
           folder.addColor({ color: colorHex }, 'color').name('Color').onChange(v => {
@@ -165,19 +153,16 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
         addMaterialFolder(gui, 'Franjas',  matFranjas, '#1a3a6b')
         gui.hide()
 
-        // ── Tamaño, posición y rotación ──
         gltf.scene.scale.setScalar(escala)
         gltf.scene.position.set(posicion.x, posicion.y, posicion.z)
         gltf.scene.rotation.set(rotacion.x, rotacion.y, rotacion.z)
 
         scene.add(gltf.scene)
       },
-
       (progress) => {
         const pct = (progress.loaded / progress.total * 100).toFixed(1)
         console.log(`Cargando ${ruta}: ${pct}%`)
       },
-
       (error) => {
         console.error(`Error cargando ${ruta}:`, error)
       }

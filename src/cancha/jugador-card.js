@@ -225,7 +225,7 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
       const aspect  = CH / CW
       sprite.scale.set(escala, escala * aspect, 1)
       sprite.position.set(jugador.x, offsetY, jugador.z)
-      sprite.renderOrder = 5
+      sprite.renderOrder = 50
       sprite.layers.set(0)
       grupo.add(sprite)
       sprites.push({ sprite, jugador })
@@ -241,7 +241,7 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
       const aspect  = CH / CW
       sprite.scale.set(escala, escala * aspect, 1)
       sprite.position.set(jugador.x, offsetY, jugador.z)
-      sprite.renderOrder = 5
+      sprite.renderOrder = 50
       sprite.layers.set(0)
       grupo.add(sprite)
       sprites.push({ sprite, jugador })
