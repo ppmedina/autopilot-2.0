@@ -23,6 +23,8 @@ import { createFlechas }      from './cancha/flechas.js'
 import { createFlechasFlow }  from './cancha/flechas-flow.js'
 import { createFlechasDash }  from './cancha/flechas-dash.js'
 import { JUGADORES }          from './cancha/jugadores.js'
+import { createStatCard }       from './cancha/stat-card.js'
+import { createChartStatCard }  from './cancha/chart-stat-card.js'
 import { createFlechasParabola } from './cancha/flechas-parabola.js'
 
 // ── Inicializar escena base ──
@@ -43,7 +45,7 @@ const { meshGrid: heatmapGrid, meshSolid: heatmapSolid } = createHeatmap(scene)
 const { mesh: meshHeatmapFlat } = createHeatmapFlat(scene)
 
 createHeatmapZona(scene, [{
-  x: 30, z: -22,
+  x: 13, z: -25,
   ancho: 40,
   alto: 18,
   color: 0x1E8CFF,
@@ -110,6 +112,36 @@ const { grupo: grupoParabola, tickFlechasParabola, ocultarPuntasParabola, mostra
   }
 )
 
+// ── Stat Card — Ball Recovery anclada a H. Martín #9 ──
+const { wrapper: statCardEl, tickStatCard } = createStatCard(scene, camera, {
+  jugador: { ...porNumero(9), y: 8.0 },
+  datos: {
+    titulo:     'Ball recovery',
+    confianza1: 0.81,
+    confianza2: 0.81,
+  },
+})
+
+// ── Chart Stat Card — gráfica de línea anclada a jugador #9 ──
+const { wrapper: chartCardEl, tickChartStatCard } = createChartStatCard(scene, camera, {
+  jugador: { ...porNumero(9), y: 8.0 },
+  datos: {
+    valor:       10.1,
+    titulo:      'centros/partido',
+    puntoActual: 87,
+    serie: [
+      { label: 'Jun', valor: 28 },
+      { label: 'Jul', valor: 55 },
+      { label: 'Aug', valor: 48 },
+      { label: 'Sep', valor: 87 },
+    ],
+    stats: [
+      { label: 'confianza', valor: 0.81 },
+      { label: 'precisión', valor: 0.74 },
+    ],
+  },
+})
+
 // ── Controles ──
 const { tickCamera, getPhi } = createControls({
   renderer,
@@ -173,7 +205,7 @@ bloomComposer.renderToScreen = false
 bloomComposer.addPass(new RenderPass(scene, camera))
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.9, 0.4, 0.0  // strength, radius, threshold
+  0.9, 0.4, 0.0
 )
 bloomComposer.addPass(bloomPass)
 
@@ -236,6 +268,8 @@ function animate() {
   tickFlechasFlow(dt)
   tickFlechasDash(dt)
   tickFlechasParabola(dt)
+  tickStatCard()
+  tickChartStatCard()
 
   // ── Fichas GLB miran hacia la cámara ──
   scene.traverse(child => {
