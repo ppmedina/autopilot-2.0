@@ -78,10 +78,8 @@ function crearTextura(color, punteado, estilo) {
   return tex
 }
 
-// ── Punta plana paralela a la cancha ─────────────────────────────────────────
 function crearPuntaPlana(posicion, dirXZ, color, opacidad, tamano = 3.5) {
-  // Triángulo en el plano XZ apuntando en dirXZ
-  const perp = new THREE.Vector3(-dirXZ.z, 0, dirXZ.x) // perpendicular
+  const perp = new THREE.Vector3(-dirXZ.z, 0, dirXZ.x)
 
   const punta  = new THREE.Vector3().copy(posicion).addScaledVector(dirXZ,  tamano * 0.6)
   const baseL  = new THREE.Vector3().copy(posicion).addScaledVector(perp,   tamano * 0.4)
@@ -132,7 +130,6 @@ export function createFlechas(scene, jugadores = JUGADORES_EJEMPLO, flechas = FL
 
     const tex = crearTextura(est.color, est.punteado, flecha.estilo)
 
-    // ── Tubo principal ──
     const geoTubo = new THREE.TubeGeometry(curvaCorta, 60, est.radio, 8, false)
     const matTubo = new THREE.MeshBasicMaterial({
       map:         tex,
@@ -145,13 +142,11 @@ export function createFlechas(scene, jugadores = JUGADORES_EJEMPLO, flechas = FL
     tubo.renderOrder = 3
     grupo.add(tubo)
 
-    // ── Dirección XZ al final de la curva ──
     const tangente = curvaCorta.getTangent(1)
     const dirXZ    = new THREE.Vector3(tangente.x, 0, tangente.z).normalize()
     const posicion = curvaCorta.getPoint(1).clone()
-    posicion.y = 0.3  // ← al nivel de la cancha
+    posicion.y = 0.3
 
-    // ── Punta plana en el plano XZ ──
     const punta = crearPuntaPlana(posicion, dirXZ, est.color, est.opacidad)
     grupo.add(punta)
     puntasMesh.push(punta)
@@ -163,7 +158,6 @@ export function createFlechas(scene, jugadores = JUGADORES_EJEMPLO, flechas = FL
     }
   })
 
-  // ── Nodos en posición de jugadores ───────────────────────────────────────
   jugadores.forEach(j => {
     const geoRing = new THREE.RingGeometry(2.2, 2.7, 32)
     const matRing = new THREE.MeshBasicMaterial({
@@ -180,7 +174,6 @@ export function createFlechas(scene, jugadores = JUGADORES_EJEMPLO, flechas = FL
     grupo.add(anillo)
   })
 
-  // ── Tick ──────────────────────────────────────────────────────────────────
   function tickFlechas(dt, camera) {
     if (!grupo.visible) return
     lineasAnimadas.forEach(({ tex, velocidad }) => {
@@ -190,16 +183,6 @@ export function createFlechas(scene, jugadores = JUGADORES_EJEMPLO, flechas = FL
 
   function ocultarPuntas() { puntasMesh.forEach(p => { p.visible = false }) }
   function mostrarPuntas() { puntasMesh.forEach(p => { p.visible = true  }) }
-
-  // ── Botón ──
-  const btn = document.createElement('button')
-  btn.textContent = 'Flechas'
-  btn.className   = 'btn'
-  btn.addEventListener('click', function () {
-    grupo.visible = !grupo.visible
-    this.classList.toggle('active', grupo.visible)
-  })
-  document.getElementById('cc-controls').appendChild(btn)
 
   return { grupo, tickFlechas, ocultarPuntas, mostrarPuntas }
 }

@@ -38,7 +38,7 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
 
   const cvs = renderer.domElement
 
-  // Mouse
+  // ── Mouse ──
   cvs.addEventListener('mousedown', e => {
     isDragging  = true
     isAnimating = false
@@ -60,7 +60,7 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
     updateCamera()
   })
 
-  // Touch
+  // ── Touch ──
   cvs.addEventListener('touchstart', e => {
     isDragging  = true
     isAnimating = false
@@ -77,28 +77,7 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
     updateCamera()
   })
 
-  // ── Botones UI de color ──
-  const colorPresets = {
-    white: { color: 0xffffff, emissive: 0xaaddff },
-    cyan:  { color: 0x00eeff, emissive: 0x00ccff },
-    gold:  { color: 0xffdd44, emissive: 0xffaa00 },
-  }
-
-  document.querySelectorAll('.btn[data-color]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const { color, emissive } = colorPresets[btn.dataset.color]
-      setLinesColor(color, emissive)
-      document.querySelectorAll('.btn[data-color]').forEach(b => b.classList.remove('active'))
-      btn.classList.add('active')
-    })
-  })
-
-  document.getElementById('btn-rotate').addEventListener('click', function () {
-    autoRotate = !autoRotate
-    this.classList.toggle('active', autoRotate)
-  })
-
-  // ── Botones de vista con animación y rotación de team ──
+  // ── Botones de vista ──
   const views = {
     'Horizontal top': () => {
       animateTo(0, Math.PI / 2 - 0.01, 120)
@@ -128,13 +107,6 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
 
   // ── Loop de animación ──
   function tickCamera() {
-    if (autoRotate) {
-      theta += 0.004
-      targetTheta = theta
-      updateCamera()
-      return
-    }
-
     if (isAnimating) {
       const speed = 0.3
 

@@ -8,7 +8,6 @@ const FLECHAS_FLOW_EJEMPLO = [
   { de: { x:-20, z:  10 }, a: { x: 25, z:   5 }, intensidad: 0.7 },
 ]
 
-// ── Textura de flujo — igual que conexiones ───────────────────────────────────
 function crearTexturaFlujo(intensidad) {
   const w = 256, h = 32
   const canvas = document.createElement('canvas')
@@ -23,7 +22,6 @@ function crearTexturaFlujo(intensidad) {
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, w, h)
 
-  // Fade en los bordes verticales
   const gradV = ctx.createLinearGradient(0, 0, 0, h)
   gradV.addColorStop(0.0,  'rgba(0,0,0,0)')
   gradV.addColorStop(0.15, 'rgba(255,255,255,1)')
@@ -39,7 +37,6 @@ function crearTexturaFlujo(intensidad) {
   return tex
 }
 
-// ── Geometría trapecio — más angosto en origen, más ancho en destino ──────────
 function crearGeoTrapecio(inicio, fin, anchoOrigen, anchoDestino) {
   const dir  = new THREE.Vector3().subVectors(fin, inicio).normalize()
   const perp = new THREE.Vector3(-dir.z, 0, dir.x)
@@ -68,7 +65,6 @@ function crearGeoTrapecio(inicio, fin, anchoOrigen, anchoDestino) {
   return geo
 }
 
-// ── Punta plana paralela a la cancha ─────────────────────────────────────────
 function crearPuntaPlana(posicion, dirXZ, color, opacidad, tamano = 3.5) {
   const perp  = new THREE.Vector3(-dirXZ.z, 0, dirXZ.x)
   const punta = new THREE.Vector3().copy(posicion).addScaledVector(dirXZ,  tamano * 0.7)
@@ -102,8 +98,8 @@ export function createFlechasFlow(scene, flechas = FLECHAS_FLOW_EJEMPLO, opcione
 
   const {
     offsetY      = 0.5,
-    anchoOrigen  = 0.4,   // ← ancho en el origen (punta fina)
-    anchoDestino = 2.5,   // ← ancho en el destino (base ancha)
+    anchoOrigen  = 0.4,
+    anchoDestino = 2.5,
     colorPunta   = 0x78C8FF,
   } = opciones
 
@@ -122,12 +118,10 @@ export function createFlechasFlow(scene, flechas = FLECHAS_FLOW_EJEMPLO, opcione
     const fin    = new THREE.Vector3(flecha.a.x,  0, flecha.a.z)
     const dir    = new THREE.Vector3().subVectors(fin, inicio).normalize()
 
-    // Acortar para no tapar destino
     const finAcortado = new THREE.Vector3().copy(fin).addScaledVector(dir, -3.5)
 
     const tex = crearTexturaFlujo(intensidad)
 
-    // ── Trapecio principal ──
     const mat = new THREE.MeshBasicMaterial({
       map:         tex,
       transparent: true,
@@ -142,7 +136,6 @@ export function createFlechasFlow(scene, flechas = FLECHAS_FLOW_EJEMPLO, opcione
     mesh.renderOrder = 3
     grupo.add(mesh)
 
-    // ── Glow más ancho y tenue ──
     const matGlow = new THREE.MeshBasicMaterial({
       map:         tex,
       transparent: true,
@@ -158,7 +151,6 @@ export function createFlechasFlow(scene, flechas = FLECHAS_FLOW_EJEMPLO, opcione
     meshGlow.renderOrder = 2
     grupo.add(meshGlow)
 
-    // ── Punta plana en dirección de la flecha ──
     const punta = crearPuntaPlana(
       finAcortado,
       dir,
@@ -169,11 +161,9 @@ export function createFlechasFlow(scene, flechas = FLECHAS_FLOW_EJEMPLO, opcione
     grupo.add(punta)
     puntasMesh.push(punta)
 
-    // Animar UV
     lineasAnimadas.push({ tex, velocidad: 0.4 + intensidad * 0.3 })
   })
 
-  // ── Tick — animar flujo ───────────────────────────────────────────────────
   function tickFlechasFlow(dt) {
     if (!grupo.visible) return
     lineasAnimadas.forEach(({ tex, velocidad }) => {
@@ -183,16 +173,6 @@ export function createFlechasFlow(scene, flechas = FLECHAS_FLOW_EJEMPLO, opcione
 
   function ocultarPuntasFlow() { puntasMesh.forEach(p => { p.visible = false }) }
   function mostrarPuntasFlow() { puntasMesh.forEach(p => { p.visible = true  }) }
-
-  // ── Botón ──
-  const btn = document.createElement('button')
-  btn.textContent = 'Flujo'
-  btn.className   = 'btn'
-  btn.addEventListener('click', function () {
-    grupo.visible = !grupo.visible
-    this.classList.toggle('active', grupo.visible)
-  })
-  document.getElementById('cc-controls').appendChild(btn)
 
   return { grupo, tickFlechasFlow, ocultarPuntasFlow, mostrarPuntasFlow }
 }

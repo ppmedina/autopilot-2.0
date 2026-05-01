@@ -29,7 +29,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     offsetY   = 0.4,
   } = opciones
 
-  // ── Interpolación bilineal base ──
   function interpolarDato(u, v) {
     const filas = datos.length
     const cols  = datos[0].length
@@ -46,7 +45,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
          + datos[f1][c1] * stf     * stc
   }
 
-  // ── Suavizado adicional por vecinos ──
   function muestrearSuavizado(u, v, radio = 0.018) {
     let suma = 0
     let peso = 0
@@ -64,7 +62,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return suma / peso
   }
 
-  // ── Bordes forzados a 0 ──
   function valorConBordes(u, v) {
     const margen = 1.5 / Math.min(segX, segZ)
     const bordeU = Math.min(u, 1 - u) / margen
@@ -74,37 +71,27 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return Math.pow(muestrearSuavizado(u, v), 1.4) * s
   }
 
-  // ── Color por altura — gradiente continuo con 6 tonos intermedios ──
-  // Paleta inspirada en heatmap-flat: azul marino → azul → cyan → blanco
   const PALETA = [
-    { t: 0.00, r:  4/255, g: 15/255, b:  50/255 },  // negro azulado
-    { t: 0.12, r:  6/255, g: 30/255, b: 120/255 },  // azul muy oscuro
-    { t: 0.25, r: 10/255, g: 55/255, b: 180/255 },  // azul marino
-    { t: 0.40, r: 20/255, g: 90/255, b: 240/255 },  // azul medio
-    { t: 0.55, r: 30/255, g:140/255, b: 255/255 },  // azul eléctrico
-    { t: 0.68, r: 60/255, g:190/255, b: 255/255 },  // azul claro / cyan
-    { t: 0.80, r:140/255, g:225/255, b: 255/255 },  // cyan claro
-    { t: 0.90, r:210/255, g:245/255, b: 255/255 },  // casi blanco/cyan
-    { t: 1.00, r:255/255, g:255/255, b: 255/255 },  // blanco puro
+    { t: 0.00, r:  4/255, g: 15/255, b:  50/255 },
+    { t: 0.12, r:  6/255, g: 30/255, b: 120/255 },
+    { t: 0.25, r: 10/255, g: 55/255, b: 180/255 },
+    { t: 0.40, r: 20/255, g: 90/255, b: 240/255 },
+    { t: 0.55, r: 30/255, g:140/255, b: 255/255 },
+    { t: 0.68, r: 60/255, g:190/255, b: 255/255 },
+    { t: 0.80, r:140/255, g:225/255, b: 255/255 },
+    { t: 0.90, r:210/255, g:245/255, b: 255/255 },
+    { t: 1.00, r:255/255, g:255/255, b: 255/255 },
   ]
 
   function colorPorAltura(t) {
     const color = new THREE.Color()
-
-    // Encontrar los dos colores vecinos en la paleta
     let i = 0
     while (i < PALETA.length - 2 && t > PALETA[i + 1].t) i++
-
     const c0 = PALETA[i]
     const c1 = PALETA[i + 1]
-
-    // Factor local normalizado entre los dos puntos
-    const rango  = c1.t - c0.t
-    const local  = rango > 0 ? (t - c0.t) / rango : 0
-
-    // Smoothstep para suavizar la interpolación local
+    const rango = c1.t - c0.t
+    const local = rango > 0 ? (t - c0.t) / rango : 0
     const s = local * local * (3 - 2 * local)
-
     color.setRGB(
       c0.r + (c1.r - c0.r) * s,
       c0.g + (c1.g - c0.g) * s,
@@ -113,7 +100,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return color
   }
 
-  // ── Calcular alturas ──
   function calcularAlturas(altMax) {
     const alturas = []
     for (let iz = 0; iz <= segZ; iz++) {
@@ -127,7 +113,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return alturas
   }
 
-  // ── Grid de líneas ──
   function crearGridCuadros(alturas) {
     const points = []
     const colors = []
@@ -164,7 +149,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return geo
   }
 
-  // ── Mesh sólido ──
   function crearMeshSolido(alturas) {
     const positions = []
     const colors    = []
@@ -204,7 +188,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return geo
   }
 
-  // ── Construir ──
   let alturas  = calcularAlturas(alturaMax)
   let geoGrid  = crearGridCuadros(alturas)
   let geoSolid = crearMeshSolido(alturas)
@@ -239,7 +222,6 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     meshSolid.geometry = crearMeshSolido(alturas)
   }
 
-  // ── GUI ──
   const params = { visible: true, opacidad: 0.5, alturaMax }
   const gui = new GUI({ title: 'Heatmap' })
   gui.domElement.style.position = 'fixed'
@@ -260,7 +242,7 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
 
   // ── Botón ──
   const btn = document.createElement('button')
-  btn.textContent = 'Heatmap'
+  btn.textContent = 'Volumétrica'
   btn.className   = 'btn'
   btn.addEventListener('click', function() {
     const visible = !meshGrid.visible

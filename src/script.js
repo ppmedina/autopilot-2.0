@@ -44,12 +44,14 @@ const { meshGrid: heatmapGrid, meshSolid: heatmapSolid } = createHeatmap(scene)
 // ── Heatmap Flat ──
 const { mesh: meshHeatmapFlat } = createHeatmapFlat(scene)
 
-createHeatmapZona(scene, [{
+// ── Heatmap Zona ──
+const { grupo: grupoZona } = createHeatmapZona(scene, [{
   x: 13, z: -25,
   ancho: 40,
   alto: 18,
   color: 0x1E8CFF,
   alpha: 0.25,
+  label: 'Banda derecha',
 }])
 
 // ── Cards de jugadores ──
@@ -286,9 +288,11 @@ function animate() {
   const equipoEraVisible        = grupoEquipo.visible
   const conexionesV2EranVisible = grupoConexionesV2.visible
   const heatmapFlatEraVisible   = meshHeatmapFlat ? meshHeatmapFlat.visible : false
+  const zonaEraVisible          = grupoZona.visible
 
   grupoJugadores.visible    = false
   grupoConexionesV2.visible = false
+  grupoZona.visible         = false
   if (meshHeatmapFlat) meshHeatmapFlat.visible = false
 
   const spriteEquipo     = grupoEquipo.children.find(c => c.isSprite)
@@ -307,6 +311,7 @@ function animate() {
   grupoJugadores.visible    = jugadoresEranVisibles
   grupoEquipo.visible       = equipoEraVisible
   grupoConexionesV2.visible = conexionesV2EranVisible
+  grupoZona.visible         = zonaEraVisible
   if (meshHeatmapFlat) meshHeatmapFlat.visible = heatmapFlatEraVisible
   if (spriteEquipo)    spriteEquipo.visible     = spriteEraVisible
   mostrarPuntas()
