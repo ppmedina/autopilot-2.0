@@ -17,6 +17,8 @@ import { createHeatmap }    from './cancha/heatmap.js'
 import { createConexionesV2 } from './cancha/conexiones-v2.js'
 import { createHeatmapFlat } from './cancha/heatmap-flat.js'
 import { createHeatmapZona } from './cancha/heatmap-zona.js'
+import { createHeatmapZonasPases } from './cancha/heatmap-zonas-pases.js'
+import { createEventosCancha }     from './cancha/eventos-cancha.js'
 import { createJugadorCards } from './cancha/jugador-card.js'
 import { createEquipoCard }   from './cancha/equipo-card.js'
 import { createFlechas }      from './cancha/flechas.js'
@@ -53,6 +55,70 @@ const { grupo: grupoZona } = createHeatmapZona(scene, [{
   alpha: 0.25,
   label: 'Banda derecha',
 }])
+
+// ── Heatmap Zonas Pases ──
+const { grupo: grupoZonasPases, updatePases, tickZonasPases } = createHeatmapZonasPases(scene, [
+  [ 12,  8, 15, 30 ],
+  [ 20, 45, 60, 25 ],
+  [ 18, 50, 55, 22 ],
+  [ 10,  6, 12, 28 ],
+])
+
+// ── Eventos en cancha ──
+const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
+  // Anillo exterior del círculo
+  { x:  25, z: -24, tipo: 'circulo',   color: '#EA6500' },
+  { x:  25, z:  24, tipo: 'hexagono',  color: '#0752E4' },
+  { x:   2, z:   0, tipo: 'cuadrado',  color: '#F7B203' },
+  { x:  48, z:   0, tipo: 'diamante',  color: '#7BA4F5' },
+  { x:  10, z: -22, tipo: 'triangulo', color: '#EA8900' },
+  { x:  10, z:  22, tipo: 'circulo',   color: '#F3D662' },
+  { x:  40, z: -22, tipo: 'hexagono',  color: '#EA6500' },
+  { x:  40, z:  22, tipo: 'cuadrado',  color: '#FFFFFF' },
+
+  // Anillo medio
+  { x:   8, z:  -8, tipo: 'diamante',  color: '#0752E4' },
+  { x:   8, z:   8, tipo: 'triangulo', color: '#F7B203' },
+  { x:  15, z: -18, tipo: 'circulo',   color: '#EA6500' },
+  { x:  15, z:  18, tipo: 'hexagono',  color: '#EA8900' },
+  { x:  15, z:  -5, tipo: 'cuadrado',  color: '#7BA4F5' },
+  { x:  15, z:   5, tipo: 'diamante',  color: '#F8F899' },
+  { x:  25, z: -18, tipo: 'triangulo', color: '#EA6500' },
+  { x:  25, z:  18, tipo: 'circulo',   color: '#0752E4' },
+  { x:  35, z: -18, tipo: 'hexagono',  color: '#F3D662' },
+  { x:  35, z:  18, tipo: 'cuadrado',  color: '#EA6500' },
+  { x:  35, z:  -5, tipo: 'diamante',  color: '#F7B203' },
+  { x:  35, z:   5, tipo: 'triangulo', color: '#7BA4F5' },
+  { x:  42, z:  -8, tipo: 'circulo',   color: '#EA8900' },
+  { x:  42, z:   8, tipo: 'hexagono',  color: '#FFFFFF' },
+
+  // Anillo interior
+  { x:  12, z:   0, tipo: 'cuadrado',  color: '#EA6500' },
+  { x:  18, z: -12, tipo: 'diamante',  color: '#0752E4' },
+  { x:  18, z:  12, tipo: 'triangulo', color: '#F7B203' },
+  { x:  18, z:   0, tipo: 'circulo',   color: '#EA8900' },
+  { x:  25, z: -12, tipo: 'hexagono',  color: '#F3D662' },
+  { x:  25, z:  12, tipo: 'cuadrado',  color: '#EA6500' },
+  { x:  25, z:  -6, tipo: 'diamante',  color: '#7BA4F5' },
+  { x:  25, z:   6, tipo: 'triangulo', color: '#F8F899' },
+  { x:  32, z: -12, tipo: 'circulo',   color: '#EA6500' },
+  { x:  32, z:  12, tipo: 'hexagono',  color: '#0752E4' },
+  { x:  32, z:   0, tipo: 'cuadrado',  color: '#F7B203' },
+  { x:  38, z:   0, tipo: 'diamante',  color: '#EA8900' },
+
+  // Centro
+  { x:  20, z:  -6, tipo: 'triangulo', color: '#FFFFFF'  },
+  { x:  20, z:   6, tipo: 'circulo',   color: '#EA6500'  },
+  { x:  25, z:   0, tipo: 'hexagono',  color: '#F7B203'  },
+  { x:  28, z:  -8, tipo: 'cuadrado',  color: '#7BA4F5'  },
+  { x:  28, z:   8, tipo: 'diamante',  color: '#EA6500'  },
+  { x:  22, z:   0, tipo: 'triangulo', color: '#F3D662'  },
+  { x:  30, z:  -3, tipo: 'circulo',   color: '#EA8900'  },
+  { x:  30, z:   3, tipo: 'hexagono',  color: '#0752E4'  },
+  { x:  16, z:  -4, tipo: 'cuadrado',  color: '#F8F899'  },
+  { x:  16, z:   4, tipo: 'diamante',  color: '#EA6500'  },
+  { x:  34, z:  -4, tipo: 'triangulo', color: '#F7B203'  },
+])
 
 // ── Cards de jugadores ──
 const { grupo: grupoJugadores } = createJugadorCards(scene, JUGADORES, {
@@ -272,6 +338,8 @@ function animate() {
   tickFlechasParabola(dt)
   tickStatCard()
   tickChartStatCard()
+  tickZonasPases(camera)
+  tickEventos(camera)
 
   // ── Fichas GLB miran hacia la cámara ──
   scene.traverse(child => {
@@ -284,15 +352,19 @@ function animate() {
   const bg = scene.background
   scene.background = null
 
-  const jugadoresEranVisibles   = grupoJugadores.visible
-  const equipoEraVisible        = grupoEquipo.visible
-  const conexionesV2EranVisible = grupoConexionesV2.visible
-  const heatmapFlatEraVisible   = meshHeatmapFlat ? meshHeatmapFlat.visible : false
-  const zonaEraVisible          = grupoZona.visible
+  const jugadoresEranVisibles    = grupoJugadores.visible
+  const equipoEraVisible         = grupoEquipo.visible
+  const conexionesV2EranVisible  = grupoConexionesV2.visible
+  const heatmapFlatEraVisible    = meshHeatmapFlat ? meshHeatmapFlat.visible : false
+  const zonaEraVisible           = grupoZona.visible
+  const zonasPasesEranVisibles   = grupoZonasPases.visible
+  const eventosEranVisibles      = grupoEventos.visible
 
   grupoJugadores.visible    = false
   grupoConexionesV2.visible = false
   grupoZona.visible         = false
+  grupoZonasPases.visible   = false
+  grupoEventos.visible      = false
   if (meshHeatmapFlat) meshHeatmapFlat.visible = false
 
   const spriteEquipo     = grupoEquipo.children.find(c => c.isSprite)
@@ -312,6 +384,8 @@ function animate() {
   grupoEquipo.visible       = equipoEraVisible
   grupoConexionesV2.visible = conexionesV2EranVisible
   grupoZona.visible         = zonaEraVisible
+  grupoZonasPases.visible   = zonasPasesEranVisibles
+  grupoEventos.visible      = eventosEranVisibles
   if (meshHeatmapFlat) meshHeatmapFlat.visible = heatmapFlatEraVisible
   if (spriteEquipo)    spriteEquipo.visible     = spriteEraVisible
   mostrarPuntas()
