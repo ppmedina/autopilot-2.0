@@ -17,10 +17,13 @@ export function createScene() {
   const renderer = new THREE.WebGLRenderer({ antialias: true })
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.shadowMap.enabled   = true
-  renderer.shadowMap.type      = THREE.PCFSoftShadowMap
-  renderer.toneMapping         = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.2
+  renderer.shadowMap.enabled        = true
+  renderer.shadowMap.type           = THREE.PCFSoftShadowMap
+  renderer.toneMapping              = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure      = 1.2
+  renderer.physicallyCorrectLights  = true
+  renderer.localClippingEnabled     = true   // ← necesario para clippingPlanes en materiales
+  renderer.domElement.style.touchAction = 'none'
   document.body.appendChild(renderer.domElement)
 
   window.addEventListener('resize', () => {

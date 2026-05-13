@@ -1,5 +1,6 @@
 // src/cancha/heatmap.js
 import * as THREE from 'three'
+import gsap from 'gsap'
 import GUI from 'lil-gui'
 
 const DATOS_EJEMPLO = [
@@ -46,8 +47,7 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
   }
 
   function muestrearSuavizado(u, v, radio = 0.018) {
-    let suma = 0
-    let peso = 0
+    let suma = 0, peso = 0
     const pasos = 4
     for (let du = -pasos; du <= pasos; du++) {
       for (let dv = -pasos; dv <= pasos; dv++) {
@@ -87,8 +87,7 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     const color = new THREE.Color()
     let i = 0
     while (i < PALETA.length - 2 && t > PALETA[i + 1].t) i++
-    const c0 = PALETA[i]
-    const c1 = PALETA[i + 1]
+    const c0 = PALETA[i], c1 = PALETA[i + 1]
     const rango = c1.t - c0.t
     const local = rango > 0 ? (t - c0.t) / rango : 0
     const s = local * local * (3 - 2 * local)
@@ -100,46 +99,45 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return color
   }
 
-  function calcularAlturas(altMax) {
-    const alturas = []
-    for (let iz = 0; iz <= segZ; iz++) {
-      alturas[iz] = []
-      for (let ix = 0; ix <= segX; ix++) {
-        const u = iz / segZ
-        const v = ix / segX
-        alturas[iz][ix] = valorConBordes(u, v) * altMax
-      }
+  // ─── Pre-calcula las alturas base normalizadas [0..1] ────────────────────────
+  // Durante la animación solo se multiplica por (mult * alturaMax),
+  // así evitamos recalcular la interpolación y suavizado cada frame.
+  const alturasBase = []   // valores [0..1]
+  for (let iz = 0; iz <= segZ; iz++) {
+    alturasBase[iz] = []
+    for (let ix = 0; ix <= segX; ix++) {
+      alturasBase[iz][ix] = valorConBordes(iz / segZ, ix / segX)
     }
-    return alturas
   }
 
-  function crearGridCuadros(alturas) {
-    const points = []
-    const colors = []
+  // ─── Crea geometrías con un multiplicador de altura ──────────────────────────
+  function crearGridCuadros(mult) {
+    const points = [], colors = []
     const stepX = ancho / segX
     const stepZ = alto  / segZ
+    const altMax = mult * alturaMax
 
     function pushPoint(ix, iz) {
       const x = -ancho / 2 + ix * stepX
       const z = -alto  / 2 + iz * stepZ
-      const y = alturas[iz][ix]
+      const y = alturasBase[iz][ix] * altMax
       points.push(x, y, z)
-      const t     = y / alturaMax
-      const alpha = Math.pow(t, 0.6)
+      const t     = altMax > 0 ? y / altMax : 0
+      // Alpha mínimo visible en cero, sube suavemente hasta 1 en los picos
+      const MIN = 0.055
+      const alpha = MIN + (1 - MIN) * Math.pow(t, 0.5)
       const c     = colorPorAltura(t)
       colors.push(c.r * alpha, c.g * alpha, c.b * alpha)
     }
 
     for (let iz = 0; iz <= segZ; iz++) {
       for (let ix = 0; ix < segX; ix++) {
-        pushPoint(ix, iz)
-        pushPoint(ix + 1, iz)
+        pushPoint(ix, iz); pushPoint(ix + 1, iz)
       }
     }
     for (let ix = 0; ix <= segX; ix++) {
       for (let iz = 0; iz < segZ; iz++) {
-        pushPoint(ix, iz)
-        pushPoint(ix, iz + 1)
+        pushPoint(ix, iz); pushPoint(ix, iz + 1)
       }
     }
 
@@ -149,21 +147,21 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return geo
   }
 
-  function crearMeshSolido(alturas) {
-    const positions = []
-    const colors    = []
-    const indices   = []
+  function crearMeshSolido(mult) {
+    const positions = [], colors = [], indices = []
     const stepX = ancho / segX
     const stepZ = alto  / segZ
+    const altMax = mult * alturaMax
 
     for (let iz = 0; iz <= segZ; iz++) {
       for (let ix = 0; ix <= segX; ix++) {
         const x = -ancho / 2 + ix * stepX
         const z = -alto  / 2 + iz * stepZ
-        const y = alturas[iz][ix]
+        const y = alturasBase[iz][ix] * altMax
         positions.push(x, y, z)
-        const t     = y / alturaMax
-        const alpha = Math.pow(t, 0.8)
+        const t     = altMax > 0 ? y / altMax : 0
+        const MIN = 0.055
+        const alpha = MIN + (1 - MIN) * Math.pow(t, 0.7)
         const c     = colorPorAltura(t)
         colors.push(c.r * alpha, c.g * alpha, c.b * alpha)
       }
@@ -175,8 +173,7 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
         const b = iz       * (segX + 1) + ix + 1
         const c = (iz + 1) * (segX + 1) + ix
         const d = (iz + 1) * (segX + 1) + ix + 1
-        indices.push(a, b, c)
-        indices.push(b, d, c)
+        indices.push(a, b, c, b, d, c)
       }
     }
 
@@ -188,41 +185,173 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     return geo
   }
 
-  let alturas  = calcularAlturas(alturaMax)
-  let geoGrid  = crearGridCuadros(alturas)
-  let geoSolid = crearMeshSolido(alturas)
+  // ─── Actualiza buffers existentes sin recrear geometría ──────────────────────
+  // Mucho más rápido que dispose + new BufferGeometry cada frame.
+  function actualizarBuffers(mult) {
+    const altMax = mult * alturaMax
+    const posGrid  = meshGrid.geometry.attributes.position.array
+    const colGrid  = meshGrid.geometry.attributes.color.array
+    const posSolid = meshSolid.geometry.attributes.position.array
+    const colSolid = meshSolid.geometry.attributes.color.array
 
-  const matGrid = new THREE.LineBasicMaterial({
+    const stepX = ancho / segX
+    const stepZ = alto  / segZ
+
+    // Grid — líneas horizontales + verticales
+    let gi = 0
+    for (let iz = 0; iz <= segZ; iz++) {
+      for (let ix = 0; ix < segX; ix++) {
+        for (const [iix, iiz] of [[ix, iz], [ix + 1, iz]]) {
+          const y = alturasBase[iiz][iix] * altMax
+          posGrid[gi * 3 + 0] = -ancho / 2 + iix * stepX
+          posGrid[gi * 3 + 1] = y
+          posGrid[gi * 3 + 2] = -alto  / 2 + iiz * stepZ
+          const t = altMax > 0 ? y / altMax : 0
+          const MIN = 0.055
+          const a = MIN + (1 - MIN) * Math.pow(t, 0.5)
+          const c = colorPorAltura(t)
+          colGrid[gi * 3 + 0] = c.r * a
+          colGrid[gi * 3 + 1] = c.g * a
+          colGrid[gi * 3 + 2] = c.b * a
+          gi++
+        }
+      }
+    }
+    for (let ix = 0; ix <= segX; ix++) {
+      for (let iz = 0; iz < segZ; iz++) {
+        for (const [iix, iiz] of [[ix, iz], [ix, iz + 1]]) {
+          const y = alturasBase[iiz][iix] * altMax
+          posGrid[gi * 3 + 0] = -ancho / 2 + iix * stepX
+          posGrid[gi * 3 + 1] = y
+          posGrid[gi * 3 + 2] = -alto  / 2 + iiz * stepZ
+          const t = altMax > 0 ? y / altMax : 0
+          const MIN = 0.055
+          const a = MIN + (1 - MIN) * Math.pow(t, 0.5)
+          const c = colorPorAltura(t)
+          colGrid[gi * 3 + 0] = c.r * a
+          colGrid[gi * 3 + 1] = c.g * a
+          colGrid[gi * 3 + 2] = c.b * a
+          gi++
+        }
+      }
+    }
+    meshGrid.geometry.attributes.position.needsUpdate = true
+    meshGrid.geometry.attributes.color.needsUpdate    = true
+
+    // Solid
+    let si = 0
+    for (let iz = 0; iz <= segZ; iz++) {
+      for (let ix = 0; ix <= segX; ix++) {
+        const y = alturasBase[iz][ix] * altMax
+        posSolid[si * 3 + 0] = -ancho / 2 + ix * stepX
+        posSolid[si * 3 + 1] = y
+        posSolid[si * 3 + 2] = -alto  / 2 + iz * stepZ
+        const t = altMax > 0 ? y / altMax : 0
+        const MIN = 0.055
+        const a = MIN + (1 - MIN) * Math.pow(t, 0.7)
+        const c = colorPorAltura(t)
+        colSolid[si * 3 + 0] = c.r * a
+        colSolid[si * 3 + 1] = c.g * a
+        colSolid[si * 3 + 2] = c.b * a
+        si++
+      }
+    }
+    meshSolid.geometry.attributes.position.needsUpdate = true
+    meshSolid.geometry.attributes.color.needsUpdate    = true
+    meshSolid.geometry.computeVertexNormals()
+  }
+
+  // ─── Setup inicial con mult = 1 ──────────────────────────────────────────────
+  const meshGrid  = new THREE.LineSegments(crearGridCuadros(1), new THREE.LineBasicMaterial({
     vertexColors: true,
     transparent:  true,
     opacity:      0.68,
-  })
-
-  const matSolid = new THREE.MeshBasicMaterial({
+    blending:     THREE.AdditiveBlending,
+    depthWrite:   false,
+  }))
+  const meshSolid = new THREE.Mesh(crearMeshSolido(1), new THREE.MeshBasicMaterial({
     vertexColors: true,
     transparent:  true,
     opacity:      0.08,
     side:         THREE.DoubleSide,
-  })
-
-  const meshGrid  = new THREE.LineSegments(geoGrid,  matGrid)
-  const meshSolid = new THREE.Mesh(geoSolid, matSolid)
+    blending:     THREE.AdditiveBlending,
+    depthWrite:   false,
+  }))
 
   meshGrid.position.y  = offsetY
   meshSolid.position.y = offsetY
+  meshGrid.visible     = false
+  meshSolid.visible    = false
 
   scene.add(meshGrid)
   scene.add(meshSolid)
 
-  function reconstruir(altMax) {
-    alturas = calcularAlturas(altMax)
-    meshGrid.geometry.dispose()
-    meshSolid.geometry.dispose()
-    meshGrid.geometry  = crearGridCuadros(alturas)
-    meshSolid.geometry = crearMeshSolido(alturas)
+  // ─── Estado de animación ─────────────────────────────────────────────────────
+  const estado = { mult: 0.0 }
+  let tweenActivo = null
+
+  function matarTween() {
+    if (tweenActivo) { tweenActivo.kill(); tweenActivo = null }
   }
 
-  const params = { visible: true, opacidad: 0.5, alturaMax }
+  // ─── ENTRADA — la malla crece desde el suelo ─────────────────────────────────
+  // mult va de 0 a 1 con ease elastic para que los picos "reboten" levemente
+  // al llegar a su altura final, como si los datos emergieran con inercia.
+  function animarEntrada(onComplete) {
+    matarTween()
+
+    estado.mult = 0
+    actualizarBuffers(0)
+    meshGrid.visible           = true
+    meshSolid.visible          = true
+    meshGrid.material.opacity  = 0
+    meshSolid.material.opacity = 0
+
+    const tl = gsap.timeline({ onComplete })
+    tweenActivo = tl
+
+    // Paso 1 — fade in de la malla plana (mult sigue en 0)
+    tl.to(meshGrid.material,  { opacity: 0.68, duration: 0.7, ease: 'power2.out' })
+    tl.to(meshSolid.material, { opacity: 0.08, duration: 0.7, ease: 'power2.out' }, '<')
+
+    // Paso 2 — una vez visible, crece la altura con rebote elástico
+    tl.to(estado, {
+      mult:     1.0,
+      duration: 2.2,
+      ease:     'elastic.out(1, 0.5)',
+      onUpdate() { actualizarBuffers(estado.mult) },
+    })
+  }
+
+  // ─── SALIDA ──────────────────────────────────────────────────────────────────
+  function animarSalida(onComplete) {
+    matarTween()
+
+    const tl = gsap.timeline({
+      onComplete() {
+        meshGrid.visible  = false
+        meshSolid.visible = false
+        estado.mult       = 0
+        if (onComplete) onComplete()
+      }
+    })
+    tweenActivo = tl
+
+    // Paso 1 — la altura colapsa a cero
+    tl.to(estado, {
+      mult:     0.0,
+      duration: 1.6,
+      ease:     'power2.inOut',
+      onUpdate() { actualizarBuffers(estado.mult) },
+    })
+
+    // Paso 2 — fade out de la malla plana
+    tl.to(meshGrid.material,  { opacity: 0, duration: 0.6, ease: 'power2.in' })
+    tl.to(meshSolid.material, { opacity: 0, duration: 0.6, ease: 'power2.in' }, '<')
+  }
+
+  // ─── GUI ─────────────────────────────────────────────────────────────────────
+  const params = { visible: false, opacidad: 0.68, alturaMax }
   const gui = new GUI({ title: 'Heatmap' })
   gui.domElement.style.position = 'fixed'
   gui.domElement.style.bottom   = '120px'
@@ -230,27 +359,30 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
   gui.domElement.style.top      = 'auto'
 
   gui.add(params, 'visible').name('Visible').onChange(v => {
-    meshGrid.visible  = v
-    meshSolid.visible = v
+    if (v) animarEntrada()
+    else   animarSalida()
   })
   gui.add(params, 'opacidad', 0, 1, 0.01).name('Opacidad').onChange(v => {
-    matGrid.opacity = v
+    meshGrid.material.opacity = v
   })
   gui.add(params, 'alturaMax', 1, 40, 0.5).name('Altura máx').onChange(v => {
-    reconstruir(v)
+    opciones.alturaMax = v
+    actualizarBuffers(estado.mult)
   })
 
-  // ── Botón ──
+  // ─── Botón ───────────────────────────────────────────────────────────────────
   const btn = document.createElement('button')
   btn.textContent = 'Volumétrica'
   btn.className   = 'btn'
-  btn.addEventListener('click', function() {
-    const visible = !meshGrid.visible
-    meshGrid.visible  = visible
-    meshSolid.visible = visible
-    this.classList.toggle('active', visible)
+  btn.addEventListener('click', function () {
+    if (!meshGrid.visible) {
+      animarEntrada()
+      this.classList.add('active')
+    } else {
+      animarSalida(() => this.classList.remove('active'))
+    }
   })
   document.getElementById('cc-controls').appendChild(btn)
 
-  return { meshGrid, meshSolid }
+  return { meshGrid, meshSolid, animarEntrada, animarSalida }
 }

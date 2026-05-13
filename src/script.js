@@ -19,6 +19,7 @@ import { createHeatmapFlat } from './cancha/heatmap-flat.js'
 import { createHeatmapZona } from './cancha/heatmap-zona.js'
 import { createHeatmapZonasPases } from './cancha/heatmap-zonas-pases.js'
 import { createEventosCancha }     from './cancha/eventos-cancha.js'
+import { createVentanaChart }      from './cancha/ventana-chart.js'
 import { createJugadorCards } from './cancha/jugador-card.js'
 import { createEquipoCard }   from './cancha/equipo-card.js'
 import { createFlechas }      from './cancha/flechas.js'
@@ -28,11 +29,13 @@ import { JUGADORES }          from './cancha/jugadores.js'
 import { createStatCard }       from './cancha/stat-card.js'
 import { createChartStatCard }  from './cancha/chart-stat-card.js'
 import { createFlechasParabola } from './cancha/flechas-parabola.js'
+import { createVentanaChart3D }  from './cancha/ventana-chart-3d.js'
+import { createSpiderChart3D }   from './cancha/spider-chart-3d.js'
+import { createHistoria }        from './cancha/historia.js'
 
 // ── Inicializar escena base ──
 const { scene, camera, renderer } = createScene()
 
-// ── Agregar elementos ──
 createLights(scene)
 
 const { fieldMaterial, bgTexture } = createField(scene)
@@ -45,28 +48,22 @@ const { meshGrid: heatmapGrid, meshSolid: heatmapSolid } = createHeatmap(scene)
 
 // ── Heatmap Flat ──
 const { mesh: meshHeatmapFlat } = createHeatmapFlat(scene)
+meshHeatmapFlat.layers.enable(BLOOM_LAYER)  // ← excluye de darkenNonBloomed y recibe bloom
 
 // ── Heatmap Zona ──
 const { grupo: grupoZona } = createHeatmapZona(scene, [{
-  x: 13, z: -25,
-  ancho: 40,
-  alto: 18,
-  color: 0x1E8CFF,
-  alpha: 0.25,
-  label: 'Banda derecha',
+  x: 13, z: -25, ancho: 40, alto: 18,
+  color: 0x1E8CFF, alpha: 0.25, label: 'Banda derecha',
 }])
 
 // ── Heatmap Zonas Pases ──
 const { grupo: grupoZonasPases, updatePases, tickZonasPases } = createHeatmapZonasPases(scene, [
-  [ 12,  8, 15, 30 ],
-  [ 20, 45, 60, 25 ],
-  [ 18, 50, 55, 22 ],
-  [ 10,  6, 12, 28 ],
+  [ 12,  8, 15, 30 ], [ 20, 45, 60, 25 ],
+  [ 18, 50, 55, 22 ], [ 10,  6, 12, 28 ],
 ])
 
 // ── Eventos en cancha ──
 const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
-  // Anillo exterior del círculo
   { x:  25, z: -24, tipo: 'circulo',   color: '#EA6500' },
   { x:  25, z:  24, tipo: 'hexagono',  color: '#0752E4' },
   { x:   2, z:   0, tipo: 'cuadrado',  color: '#F7B203' },
@@ -75,8 +72,6 @@ const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
   { x:  10, z:  22, tipo: 'circulo',   color: '#F3D662' },
   { x:  40, z: -22, tipo: 'hexagono',  color: '#EA6500' },
   { x:  40, z:  22, tipo: 'cuadrado',  color: '#FFFFFF' },
-
-  // Anillo medio
   { x:   8, z:  -8, tipo: 'diamante',  color: '#0752E4' },
   { x:   8, z:   8, tipo: 'triangulo', color: '#F7B203' },
   { x:  15, z: -18, tipo: 'circulo',   color: '#EA6500' },
@@ -91,8 +86,6 @@ const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
   { x:  35, z:   5, tipo: 'triangulo', color: '#7BA4F5' },
   { x:  42, z:  -8, tipo: 'circulo',   color: '#EA8900' },
   { x:  42, z:   8, tipo: 'hexagono',  color: '#FFFFFF' },
-
-  // Anillo interior
   { x:  12, z:   0, tipo: 'cuadrado',  color: '#EA6500' },
   { x:  18, z: -12, tipo: 'diamante',  color: '#0752E4' },
   { x:  18, z:  12, tipo: 'triangulo', color: '#F7B203' },
@@ -105,8 +98,6 @@ const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
   { x:  32, z:  12, tipo: 'hexagono',  color: '#0752E4' },
   { x:  32, z:   0, tipo: 'cuadrado',  color: '#F7B203' },
   { x:  38, z:   0, tipo: 'diamante',  color: '#EA8900' },
-
-  // Centro
   { x:  20, z:  -6, tipo: 'triangulo', color: '#FFFFFF'  },
   { x:  20, z:   6, tipo: 'circulo',   color: '#EA6500'  },
   { x:  25, z:   0, tipo: 'hexagono',  color: '#F7B203'  },
@@ -121,18 +112,16 @@ const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
 ])
 
 // ── Cards de jugadores ──
-const { grupo: grupoJugadores } = createJugadorCards(scene, JUGADORES, {
-  escala:  17,
-  offsetY: 8.0,
+const { grupo: grupoJugadores, tickJugadores } = createJugadorCards(scene, JUGADORES, {
+  escala: 17, offsetY: 8.0,
 })
 
 // ── Card de equipo ──
 const { grupo: grupoEquipo, tickEquipo } = createEquipoCard(scene, {
-  nombre: 'Club Deportivo',
-  escudo: '/teams/escudo-01.png',
+  nombre: 'Club Deportivo', escudo: '/teams/escudo-01.png',
 })
 
-// ── Helpers para referenciar jugadores por número ──
+// ── Helpers jugadores ──
 const porNumero = (n) => JUGADORES.find(j => j.numero === n)
 const jxz       = (n) => { const j = porNumero(n); return { x: j.x, z: j.z } }
 
@@ -158,50 +147,46 @@ const { grupo: grupoFlechasFlow, tickFlechasFlow, ocultarPuntasFlow, mostrarPunt
 
 // ── Flechas Dash ──
 const FLECHAS_DASH = [
-  { de: jxz(5), a: jxz(9),            estilo: 'dash'    },
-  { de: jxz(6), a: jxz(5),            estilo: 'dash'    },
-  { de: jxz(6), a: jxz(9),            estilo: 'dash'    },
+  { de: jxz(5), a: jxz(9),           estilo: 'dash'    },
+  { de: jxz(6), a: jxz(5),           estilo: 'dash'    },
+  { de: jxz(6), a: jxz(9),           estilo: 'dash'    },
   { de: jxz(9), a: { x: 51, z: -1 }, estilo: 'disparo', radioDestino: 0 },
 ]
 const { grupo: grupoFlechasDash, tickFlechasDash, ocultarPuntasDash, mostrarPuntasDash } = createFlechasDash(scene, FLECHAS_DASH)
 
-// ── Flechas Parabólicas — pase largo #29 → #7 ──
+// ── Flechas Parabólicas ──
 const FLECHAS_PARABOLA = [
   { de: jxz(29), a: jxz(7), estilo: 'linea' },
   { de: jxz(29), a: jxz(7), estilo: 'dash'  },
 ]
-const { grupo: grupoParabola, tickFlechasParabola, ocultarPuntasParabola, mostrarPuntasParabola } = createFlechasParabola(
-  scene,
-  FLECHAS_PARABOLA,
-  {
-    offsetY:    4.0,
-    alturaArco: 18,
-    radioAro:   4.5,
-  }
-)
-
-// ── Stat Card — Ball Recovery anclada a H. Martín #9 ──
-const { wrapper: statCardEl, tickStatCard } = createStatCard(scene, camera, {
-  jugador: { ...porNumero(9), y: 8.0 },
-  datos: {
-    titulo:     'Ball recovery',
-    confianza1: 0.81,
-    confianza2: 0.81,
-  },
+const {
+  grupo:                grupoParabola,
+  tickFlechasParabola,
+  ocultarPuntasParabola,
+  mostrarPuntasParabola,
+  animarEntrada:        animarEntradaParabola,
+  animarSalida:         animarSalidaParabola,
+} = createFlechasParabola(scene, FLECHAS_PARABOLA, {
+  offsetY:    4.0,
+  alturaArco: 18,
+  radioAro:   4.5,
+  segmentos:  80,
 })
 
-// ── Chart Stat Card — gráfica de línea anclada a jugador #9 ──
+// ── Stat Card ──
+const { wrapper: statCardEl, tickStatCard } = createStatCard(scene, camera, {
+  jugador: { ...porNumero(9), y: 8.0 },
+  datos: { titulo: 'Ball recovery', confianza1: 0.81, confianza2: 0.81 },
+})
+
+// ── Chart Stat Card ──
 const { wrapper: chartCardEl, tickChartStatCard } = createChartStatCard(scene, camera, {
   jugador: { ...porNumero(9), y: 8.0 },
   datos: {
-    valor:       10.1,
-    titulo:      'centros/partido',
-    puntoActual: 87,
+    valor: 10.1, titulo: 'centros/partido', puntoActual: 87,
     serie: [
-      { label: 'Jun', valor: 28 },
-      { label: 'Jul', valor: 55 },
-      { label: 'Aug', valor: 48 },
-      { label: 'Sep', valor: 87 },
+      { label: 'Jun', valor: 28 }, { label: 'Jul', valor: 55 },
+      { label: 'Aug', valor: 48 }, { label: 'Sep', valor: 87 },
     ],
     stats: [
       { label: 'confianza', valor: 0.81 },
@@ -212,46 +197,81 @@ const { wrapper: chartCardEl, tickChartStatCard } = createChartStatCard(scene, c
 
 // ── Controles ──
 const { tickCamera, getPhi } = createControls({
-  renderer,
-  camera,
-  fieldMaterial,
-  allLines,
-  setLinesColor,
+  renderer, camera, fieldMaterial, allLines, setLinesColor,
 })
 
-// ── Conexiones V2 (sprites canvas) ──
+// ── Ventana Chart CSS ──
+const { wrapper: ventanaChartEl } = createVentanaChart({
+  titulo: 'Centros por partido', subtitulo: 'Resumen mensual',
+  badge: '+18% vs anterior', rotacionY: -12, posX: '50%', posY: '50%',
+  series: [
+    { label: 'Este año',     color: '#4ED3FF', puntos: [15, 21, 18, 19, 26, 32] },
+    { label: 'Año anterior', color: '#7BA4F5', puntos: [13, 18, 16, 17, 21, 26] },
+  ],
+  etiquetas: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
+})
+
+// ── Ventana Chart 3D ──
+const { grupo: grupoVentana3D } = createVentanaChart3D(scene, {
+  titulo: 'Centros por partido', subtitulo: 'Resumen mensual',
+  badge: '+18% vs anterior', posicion: { x: -30, y: 18, z: -20 },
+  rotacionY: 0.3, anchoMundo: 55, altoMundo: 32, allLines,
+  series: [
+    { label: 'Este año',     color: '#4ED3FF', puntos: [15, 21, 18, 19, 26, 32] },
+    { label: 'Año anterior', color: '#7BA4F5', puntos: [13, 18, 16, 17, 21, 26] },
+  ],
+  etiquetas: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
+})
+
+// ── Spider Chart 3D ──
+const { grupo: grupoSpider3D, tickSpiderChart } = createSpiderChart3D(scene, {
+  posicion: { x: 30, y: 18, z: -20 }, rotacionY: -0.3,
+  anchoMundo: 50, altoMundo: 38, allLines,
+  datos: {
+    titulo: 'Radar General',
+    ejes: [
+      { label: 'Goles',                       num: 1 },
+      { label: '1vs1 exitosos ofensivos',     num: 2 },
+      { label: '1vs1 defensivos exitosos',    num: 3 },
+      { label: 'Balones ganados en área',     num: 4 },
+      { label: 'Centros por derecha',         num: 5 },
+      { label: 'Balones recuperados totales', num: 6 },
+    ],
+    series: [
+      { label: 'LOC', color: '#4ED3FF', valores: [0.75, 0.55, 0.80, 0.40, 0.90, 0.60] },
+      { label: 'VIS', color: '#C8E64D', valores: [0.85, 0.70, 0.45, 0.75, 0.55, 0.80] },
+    ],
+  },
+})
+
+// ── Conexiones V2 ──
 const CONEXIONES_V2 = [
-  { de:  5, a:  9, intensidad: 0.9 },
-  { de:  5, a:  6, intensidad: 0.8 },
-  { de:  5, a:  7, intensidad: 0.7 },
-  { de:  6, a:  9, intensidad: 0.7 },
-  { de:  6, a: 29, intensidad: 0.6 },
-  { de:  6, a:  4, intensidad: 0.6 },
-  { de:  9, a:  7, intensidad: 0.8 },
-  { de:  9, a: 10, intensidad: 0.9 },
-  { de:  7, a: 10, intensidad: 0.7 },
-  { de: 29, a:  4, intensidad: 0.5 },
+  { de:  5, a:  9, intensidad: 0.9 }, { de:  5, a:  6, intensidad: 0.8 },
+  { de:  5, a:  7, intensidad: 0.7 }, { de:  6, a:  9, intensidad: 0.7 },
+  { de:  6, a: 29, intensidad: 0.6 }, { de:  6, a:  4, intensidad: 0.6 },
+  { de:  9, a:  7, intensidad: 0.8 }, { de:  9, a: 10, intensidad: 0.9 },
+  { de:  7, a: 10, intensidad: 0.7 }, { de: 29, a:  4, intensidad: 0.5 },
   { de: 29, a:  6, intensidad: 0.6 },
 ]
 const { grupo: grupoConexionesV2, tickConexionesV2 } = createConexionesV2(
-  scene,
-  JUGADORES,
-  CONEXIONES_V2,
-  {
-    getPhi,
-    alturaBase:   -3,
-    alturaCentro: 0,
-    umbralTop:    1.1,
-    escalaFicha:  7.0,
-  }
+  scene, JUGADORES, CONEXIONES_V2,
+  { getPhi, alturaBase: -3, alturaCentro: 0, umbralTop: 1.1, escalaFicha: 7.0 }
 )
 
-// ── Selective Bloom ──
-const bloomLayer = new THREE.Layers()
-bloomLayer.set(BLOOM_LAYER)
+// ── Sistema de capítulos ──
+createHistoria({
+  grupoJugadores, grupoEquipo, grupoZona, grupoZonasPases,
+  grupoEventos, grupoFlechas, grupoFlechasFlow, grupoFlechasDash,
+  grupoParabola, grupoConexionesV2, grupoVentana3D, grupoSpider3D,
+  meshHeatmapFlat, statCardEl, chartCardEl, ventanaChartEl,
+  animarEntradaParabola, animarSalidaParabola,
+})
 
+// ── Selective Bloom ──
+const bloomLayer   = new THREE.Layers()
+bloomLayer.set(BLOOM_LAYER)
 const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 })
-const materialsMap  = {}
+const materialsMap = {}
 
 function darkenNonBloomed(obj) {
   if (obj.isMesh && !obj.layers.isEnabled(BLOOM_LAYER) && !obj.layers.isEnabled(CANCHA_BLOOM_LAYER)) {
@@ -259,7 +279,6 @@ function darkenNonBloomed(obj) {
     obj.material = darkMaterial
   }
 }
-
 function restoreMaterials(obj) {
   if (materialsMap[obj.uuid]) {
     obj.material = materialsMap[obj.uuid]
@@ -267,17 +286,14 @@ function restoreMaterials(obj) {
   }
 }
 
-// Composer 1 — bloom
 const bloomComposer = new EffectComposer(renderer)
 bloomComposer.renderToScreen = false
 bloomComposer.addPass(new RenderPass(scene, camera))
 const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.9, 0.4, 0.0
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.9, 0.4, 0.0
 )
 bloomComposer.addPass(bloomPass)
 
-// Composer 2 — mezcla
 const mixPass = new ShaderPass(
   new THREE.ShaderMaterial({
     uniforms: {
@@ -287,10 +303,7 @@ const mixPass = new ShaderPass(
     },
     vertexShader: `
       varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
+      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
     `,
     fragmentShader: `
       uniform sampler2D baseTexture;
@@ -312,13 +325,12 @@ const finalComposer = new EffectComposer(renderer)
 finalComposer.addPass(new RenderPass(scene, camera))
 finalComposer.addPass(mixPass)
 
-// ── Resize ──
 window.addEventListener('resize', () => {
   bloomComposer.setSize(window.innerWidth, window.innerHeight)
   finalComposer.setSize(window.innerWidth, window.innerHeight)
 })
 
-// ── Loop de animación ──
+// ── Loop ──
 const clock = new THREE.Clock()
 
 function animate() {
@@ -330,6 +342,7 @@ function animate() {
   allLines.forEach(m => { m.material.emissiveIntensity = pulse })
 
   tickCamera()
+  tickJugadores(camera)
   tickConexionesV2(camera)
   tickEquipo(camera)
   tickFlechas(dt, camera)
@@ -340,32 +353,33 @@ function animate() {
   tickChartStatCard()
   tickZonasPases(camera)
   tickEventos(camera)
+  tickSpiderChart(camera)
 
-  // ── Fichas GLB miran hacia la cámara ──
   scene.traverse(child => {
-    if (child.userData.esFicha === true) {
-      child.lookAt(camera.position)
-    }
+    if (child.userData.esFicha === true) child.lookAt(camera.position)
   })
 
-  // 1. Bloom — ocultar todo lo que no debe recibir bloom
   const bg = scene.background
   scene.background = null
 
-  const jugadoresEranVisibles    = grupoJugadores.visible
-  const equipoEraVisible         = grupoEquipo.visible
-  const conexionesV2EranVisible  = grupoConexionesV2.visible
-  const heatmapFlatEraVisible    = meshHeatmapFlat ? meshHeatmapFlat.visible : false
-  const zonaEraVisible           = grupoZona.visible
-  const zonasPasesEranVisibles   = grupoZonasPases.visible
-  const eventosEranVisibles      = grupoEventos.visible
+  const jugadoresEranVisibles   = grupoJugadores.visible
+  const equipoEraVisible        = grupoEquipo.visible
+  const conexionesV2EranVisible = grupoConexionesV2.visible
+  const zonaEraVisible          = grupoZona.visible
+  const zonasPasesEranVisibles  = grupoZonasPases.visible
+  const eventosEranVisibles     = grupoEventos.visible
+  const ventana3DEraVisible     = grupoVentana3D.visible
+  const spider3DEraVisible      = grupoSpider3D.visible
 
   grupoJugadores.visible    = false
   grupoConexionesV2.visible = false
   grupoZona.visible         = false
   grupoZonasPases.visible   = false
   grupoEventos.visible      = false
-  if (meshHeatmapFlat) meshHeatmapFlat.visible = false
+  grupoVentana3D.visible    = false
+  grupoSpider3D.visible     = false
+  // meshHeatmapFlat tiene BLOOM_LAYER activo — darkenNonBloomed lo respeta
+  // y NO se oculta aquí para que se renderice en ambos passes
 
   const spriteEquipo     = grupoEquipo.children.find(c => c.isSprite)
   const spriteEraVisible = spriteEquipo ? spriteEquipo.visible : false
@@ -386,14 +400,14 @@ function animate() {
   grupoZona.visible         = zonaEraVisible
   grupoZonasPases.visible   = zonasPasesEranVisibles
   grupoEventos.visible      = eventosEranVisibles
-  if (meshHeatmapFlat) meshHeatmapFlat.visible = heatmapFlatEraVisible
-  if (spriteEquipo)    spriteEquipo.visible     = spriteEraVisible
+  grupoVentana3D.visible    = ventana3DEraVisible
+  grupoSpider3D.visible     = spider3DEraVisible
+  if (spriteEquipo) spriteEquipo.visible = spriteEraVisible
   mostrarPuntas()
   mostrarPuntasFlow()
   mostrarPuntasDash()
   mostrarPuntasParabola()
 
-  // 2. Render final
   finalComposer.render()
 }
 

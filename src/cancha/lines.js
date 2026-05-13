@@ -1,10 +1,10 @@
+// src/cancha/lines.js
 import * as THREE from 'three'
 
 export function createLines(scene, offsetY = 0.35) {
   const allLines = []
-  const T = 0.1 // grosor de línea en metros
-
-  // ── Helpers ──
+  const Y = 0.02
+  const T = 0.12
 
   function makeMat() {
     return new THREE.MeshStandardMaterial({
@@ -17,100 +17,106 @@ export function createLines(scene, offsetY = 0.35) {
     })
   }
 
-  function addLine(w, d, x, z) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), makeMat())
+  function addSeg(x1, z1, x2, z2) {
+    const dx = x2 - x1, dz = z2 - z1
+    const len = Math.sqrt(dx * dx + dz * dz)
+    const angle = Math.atan2(dz, dx)
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(len, T), makeMat())
     m.rotation.x = -Math.PI / 2
-    m.position.set(x, 0.02, z)
-    scene.add(m)
-    allLines.push(m)
+    m.rotation.z = -angle
+    m.position.set((x1 + x2) / 2, Y, (z1 + z2) / 2)
+    scene.add(m); allLines.push(m)
   }
 
-  function addRing(inner, outer, x, z) {
-    const m = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 80), makeMat())
-    m.rotation.x = -Math.PI / 2
-    m.position.set(x, 0.02, z)
-    scene.add(m)
-    allLines.push(m)
+  function addRect(x1, z1, x2, z2) {
+    addSeg(x1, z1, x2, z1)
+    addSeg(x2, z1, x2, z2)
+    addSeg(x2, z2, x1, z2)
+    addSeg(x1, z2, x1, z1)
   }
 
-  function addArc(radius, x, z, rotY = 0, angle = Math.PI, startAngle = 0) {
+  function addArc(cx, cz, radius, startAngle, endAngle, segments) {
+    segments = segments || 120
     const pts = []
-    for (let i = 0; i <= 60; i++) {
-      const a = startAngle + (i / 60) * angle
+    for (let i = 0; i <= segments; i++) {
+      const a = startAngle + (i / segments) * (endAngle - startAngle)
       pts.push(new THREE.Vector3(
-        Math.cos(a) * radius,
+        cx + Math.cos(a) * radius,
         0,
-        Math.sin(a) * radius
+        cz + Math.sin(a) * radius
       ))
     }
+    const curve = new THREE.CatmullRomCurve3(pts)
     const m = new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 80, 0.06, 6, false),
+      new THREE.TubeGeometry(curve, 200, T / 2, 8, false),
       makeMat()
     )
-    m.position.set(x, 0.02, z)
-    m.rotation.y = rotY
-    scene.add(m)
-    allLines.push(m)
+    m.position.y = Y
+    scene.add(m); allLines.push(m)
   }
 
-  // ── Bordes exteriores ──
-  addLine(105, T,      0, -34)
-  addLine(105, T,      0,  34)
-  addLine(T,   68, -52.5,   0)
-  addLine(T,   68,  52.5,   0)
+  function addCircle(cx, cz, radius) {
+    addArc(cx, cz, radius, 0, Math.PI * 2 - 0.001, 120)
+  }
 
-  // ── Línea de medio campo ──
-  addLine(T, 68, 0, 0)
+  function addDot(cx, cz, radius) {
+    const m = new THREE.Mesh(
+      new THREE.CircleGeometry(radius, 32),
+      makeMat()
+    )
+    m.rotation.x = -Math.PI / 2
+    m.position.set(cx, Y, cz)
+    scene.add(m); allLines.push(m)
+  }
 
-  // ── Círculo central y punto ──
-  addRing(9.10, 9.22, 0, 0)
-  addRing(0, 0.28, 0, 0)
+  // Bordes exteriores
+  addRect(-52.5, -34, 52.5, 34)
 
-  // ── Áreas grandes (40.32 × 16.5 m) ──
-  addLine(T,    40.32, -36,     0)
-  addLine(16.5, T,     -44.25, -20.16)
-  addLine(16.5, T,     -44.25,  20.16)
+  // Línea de medio campo
+  addSeg(0, -34, 0, 34)
 
-  addLine(T,    40.32,  36,     0)
-  addLine(16.5, T,      44.25, -20.16)
-  addLine(16.5, T,      44.25,  20.16)
+  // Círculo central
+  addCircle(0, 0, 9.15)
 
-  // ── Áreas chicas (18.32 × 5.5 m) ──
-  addLine(T,   18.32, -47,     0)
-  addLine(5.5, T,     -49.75, -9.16)
-  addLine(5.5, T,     -49.75,  9.16)
+  // Punto central
+  addDot(0, 0, 0.28)
 
-  addLine(T,   18.32,  47,     0)
-  addLine(5.5, T,      49.75, -9.16)
-  addLine(5.5, T,      49.75,  9.16)
+  // Área grande izquierda
+  addRect(-52.5, -20.16, -36, 20.16)
 
-  // ── Puntos de penalti ──
-  addRing(0, 0.28, -41, 0)
-  addRing(0, 0.28,  41, 0)
+  // Área chica izquierda
+  addRect(-52.5, -9.16, -47, 9.16)
 
-  // ── Medias lunas ──
+  // Punto penalti izquierdo
+  addDot(-41, 0, 0.28)
+
+  // Media luna izquierda
   const r   = 9.15
   const cut = Math.acos(5 / r)
+  addArc(-41, 0, r, -cut, cut)
 
-  addArc(r, -41, 0, 0, cut * 2, -cut)
-  addArc(r,  41, 0, 0, cut * 2, Math.PI - cut)
+  // Área grande derecha
+  addRect(36, -20.16, 52.5, 20.16)
 
-  // ── Arcos de esquina (radio 1m, cuarto de círculo) ──
-  addArc(1.0, -52.5, -34,  0,                Math.PI / 2)
-  addArc(1.0,  52.5, -34,  Math.PI / 2 * 3,  Math.PI / 2)
-  addArc(1.0, -52.5,  34,  Math.PI / 2,      Math.PI / 2)
-  addArc(1.0,  52.5,  34,  Math.PI,           Math.PI / 2)
+  // Área chica derecha
+  addRect(47, -9.16, 52.5, 9.16)
 
-  addArc(1.0, -52.5, -34,  0,                Math.PI / 2)
-  addArc(1.0,  52.5, -34,  Math.PI / 2 * 3,  Math.PI / 2)
-  addArc(1.0, -52.5,  34,  Math.PI / 2,      Math.PI / 2)
-  addArc(1.0,  52.5,  34,  Math.PI,           Math.PI / 2)
+  // Punto penalti derecho
+  addDot(41, 0, 0.28)
 
-  // ── Función pública para cambiar color ──
+  // Media luna derecha
+  addArc(41, 0, r, Math.PI - cut, Math.PI + cut)
+
+  // Arcos de esquina
+  addArc(-52.5, -34, 1.0,  0,            Math.PI / 2)
+  addArc( 52.5, -34, 1.0,  Math.PI / 2, Math.PI)
+  addArc(-52.5,  34, 1.0, -Math.PI / 2, 0)
+  addArc( 52.5,  34, 1.0,  Math.PI,     Math.PI * 3 / 2)
+
   function setLinesColor(colorHex, emissiveHex) {
     allLines.forEach(m => {
       m.material.color.setHex(colorHex)
-      m.material.emissive.setHex(emissiveHex)
+      if (emissiveHex !== undefined) m.material.emissive.setHex(emissiveHex)
     })
   }
 

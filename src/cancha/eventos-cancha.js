@@ -153,7 +153,11 @@ export function createEventosCancha(scene, eventos = [], opciones = {}) {
     } = evento
 
     const tex = crearCanvasSimbolo(tipo, color)
-    const mat    = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
+    const mat = new THREE.SpriteMaterial({
+      map:         tex,
+      transparent: true,
+      depthWrite:  false,
+    })
     const sprite = new THREE.Sprite(mat)
     sprite.scale.set(tamano, tamano, 1)
     sprite.position.set(x, offsetY, z)

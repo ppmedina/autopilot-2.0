@@ -153,6 +153,9 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
         addMaterialFolder(gui, 'Franjas',  matFranjas, '#1a3a6b')
         gui.hide()
 
+        // ── Nombre para poder encontrarlo con scene.getObjectByName ──
+        gltf.scene.name = 'cancha-glb'
+
         gltf.scene.scale.setScalar(escala)
         gltf.scene.position.set(posicion.x, posicion.y, posicion.z)
         gltf.scene.rotation.set(rotacion.x, rotacion.y, rotacion.z)
