@@ -116,7 +116,7 @@ export function createEquipoCard(scene, equipo, opciones) {
       }
     })
     gltf.scene.scale.setScalar(glbEscala)
-    gltf.scene.position.set(px, 0, pz)   // empieza en el borde del clipPlane
+    gltf.scene.position.set(px, 0, pz)
     glbScene = gltf.scene
     grupo.add(glbScene)
   })
@@ -130,7 +130,7 @@ export function createEquipoCard(scene, equipo, opciones) {
     })
     const sp = new THREE.Sprite(mat)
     sp.scale.set(escala, escala, 1)
-    sp.position.set(px, 0, pz)   // empieza en el borde del clipPlane
+    sp.position.set(px, 0, pz)
     sp.renderOrder = 10
     sp.layers.set(0)
     grupo.add(sp)
@@ -167,6 +167,10 @@ export function createEquipoCard(scene, equipo, opciones) {
     }
   }
 
+  // ── Animación de salida — baja al piso ───────────────────────────────────
+  // El clipPlane en Y=0 recorta visualmente la card cuando baja.
+  // Solo se oculta el grupo cuando AMBOS (glb y sprite) llegan a -8.
+  // No se hace visible=false antes — el clipPlane hace ese trabajo suavemente.
   function animarSalida(onComplete) {
     var dur = 0.55
     var completados = 0
@@ -184,18 +188,14 @@ export function createEquipoCard(scene, equipo, opciones) {
     if (glbScene) {
       gsap.to(glbScene.position, {
         y: -8, duration: dur, ease: 'power2.in',
-        onUpdate: function() {
-          // Ocultar en cuanto el GLB pasa por Y=0
-          if (glbScene.position.y <= 0.1 && grupo.visible) {
-            grupo.visible = false
-            if (onComplete) { onComplete(); onComplete = null }
-          }
-        },
         onComplete: check
       })
     }
     if (sprite) {
-      gsap.to(sprite.position, { y: -8, duration: dur, ease: 'power2.in', onComplete: check })
+      gsap.to(sprite.position, {
+        y: -8, duration: dur, ease: 'power2.in',
+        onComplete: check
+      })
     }
   }
 

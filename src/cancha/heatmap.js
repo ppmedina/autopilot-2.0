@@ -302,28 +302,30 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
 
     estado.mult = 0
     actualizarBuffers(0)
-    meshGrid.visible           = true
-    meshSolid.visible          = true
+    meshGrid.visible  = true
+    meshSolid.visible = true
     meshGrid.material.opacity  = 0
     meshSolid.material.opacity = 0
 
     const tl = gsap.timeline({ onComplete })
     tweenActivo = tl
 
-    // Paso 1 — fade in de la malla plana (mult sigue en 0)
-    tl.to(meshGrid.material,  { opacity: 0.68, duration: 0.7, ease: 'power2.out' })
-    tl.to(meshSolid.material, { opacity: 0.08, duration: 0.7, ease: 'power2.out' }, '<')
+    // Opacidad sube al inicio para ver la malla plana
+    tl.to(meshGrid.material,  { opacity: 0.68, duration: 0.6, ease: 'power2.out' }, 0)
+    tl.to(meshSolid.material, { opacity: 0.08, duration: 0.6, ease: 'power2.out' }, 0)
 
-    // Paso 2 — una vez visible, crece la altura con rebote elástico
+    // Pausa de 0.8s en cero — se ve la malla plana sobre la cancha
+    // Luego crece con elastic para el rebote orgánico en los picos
     tl.to(estado, {
       mult:     1.0,
       duration: 2.2,
       ease:     'elastic.out(1, 0.5)',
       onUpdate() { actualizarBuffers(estado.mult) },
-    })
+    }, 0.8)
   }
 
-  // ─── SALIDA ──────────────────────────────────────────────────────────────────
+  // ─── SALIDA — la malla colapsa de vuelta al suelo ────────────────────────────
+  // power3.in acelera hacia el final — los picos caen rápido al final
   function animarSalida(onComplete) {
     matarTween()
 
@@ -337,17 +339,18 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     })
     tweenActivo = tl
 
-    // Paso 1 — la altura colapsa a cero
+    // Colapso lento — los picos bajan suavemente
     tl.to(estado, {
       mult:     0.0,
       duration: 1.6,
       ease:     'power2.inOut',
       onUpdate() { actualizarBuffers(estado.mult) },
-    })
+    }, 0)
 
-    // Paso 2 — fade out de la malla plana
-    tl.to(meshGrid.material,  { opacity: 0, duration: 0.6, ease: 'power2.in' })
-    tl.to(meshSolid.material, { opacity: 0, duration: 0.6, ease: 'power2.in' }, '<')
+    // Opacidad se mantiene hasta el final para ver la malla plana
+    // y luego desaparece
+    tl.to(meshGrid.material,  { opacity: 0, duration: 0.5, ease: 'power2.in' }, 1.4)
+    tl.to(meshSolid.material, { opacity: 0, duration: 0.5, ease: 'power2.in' }, 1.4)
   }
 
   // ─── GUI ─────────────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js'
 import { createHeatmap }    from './cancha/heatmap.js'
 import { createConexionesV2 } from './cancha/conexiones-v2.js'
 import { createHeatmapFlat } from './cancha/heatmap-flat.js'
+import { createHeatmapFlat as createHeatmapFlatV2 } from './cancha/heatmap-flat-v2.js'
 import { createHeatmapZona } from './cancha/heatmap-zona.js'
 import { createHeatmapZonasPases } from './cancha/heatmap-zonas-pases.js'
 import { createEventosCancha }     from './cancha/eventos-cancha.js'
@@ -32,6 +33,7 @@ import { createFlechasParabola } from './cancha/flechas-parabola.js'
 import { createVentanaChart3D }  from './cancha/ventana-chart-3d.js'
 import { createSpiderChart3D }   from './cancha/spider-chart-3d.js'
 import { createHistoria }        from './cancha/historia.js'
+import { ScannerEffect }         from './cancha/scanner-effect.js'
 
 // ── Inicializar escena base ──
 const { scene, camera, renderer } = createScene()
@@ -46,9 +48,22 @@ createGrid(scene, 0.35, 0)
 // ── Heatmap 3D ──
 const { meshGrid: heatmapGrid, meshSolid: heatmapSolid } = createHeatmap(scene)
 
-// ── Heatmap Flat ──
+// ── Heatmap Flat (original) ──
 const { mesh: meshHeatmapFlat } = createHeatmapFlat(scene)
-meshHeatmapFlat.layers.enable(BLOOM_LAYER)  // ← excluye de darkenNonBloomed y recibe bloom
+
+// ── Heatmap Flat V2 (capas de intensidad) ──
+const { mesh: meshHeatmapFlatV2, animarEntrada: animarEntradaFlatV2, animarSalida: animarSalidaFlatV2 } = createHeatmapFlatV2(scene)
+
+// ── Recolectar meshes de heatmap flat v2 para excluir del bloom ──────────────
+const meshesV2 = []
+scene.traverse(obj => {
+  if (obj.isMesh && obj.userData.esHeatmapFlatV2) meshesV2.push(obj)
+})
+
+// ── Set de UUIDs excluidos de darkenNonBloomed ───────────────────────────────
+const excluidos = new Set()
+excluidos.add(meshHeatmapFlat.uuid)
+meshesV2.forEach(m => excluidos.add(m.uuid))
 
 // ── Heatmap Zona ──
 const { grupo: grupoZona } = createHeatmapZona(scene, [{
@@ -258,6 +273,23 @@ const { grupo: grupoConexionesV2, tickConexionesV2 } = createConexionesV2(
   { getPhi, alturaBase: -3, alturaCentro: 0, umbralTop: 1.1, escalaFicha: 7.0 }
 )
 
+// ── Scanner Effect ──────────────────────────────────────────────────────────
+const scanner = new ScannerEffect(scene, {
+  width:       68,
+  height:      105,
+  speed:       0.45,
+  color:       0x00ccff,
+  yOffset:     0.05,
+  hexSize:     0.55,
+  trailLength: 0.6,
+  leadWidth:   5,
+})
+
+// Excluir del bloom selectivo
+scanner._group.traverse(obj => {
+  if (obj.isMesh || obj.isPoints) excluidos.add(obj.uuid)
+})
+
 // ── Sistema de capítulos ──
 createHistoria({
   grupoJugadores, grupoEquipo, grupoZona, grupoZonasPases,
@@ -265,6 +297,8 @@ createHistoria({
   grupoParabola, grupoConexionesV2, grupoVentana3D, grupoSpider3D,
   meshHeatmapFlat, statCardEl, chartCardEl, ventanaChartEl,
   animarEntradaParabola, animarSalidaParabola,
+  animarEntradaFlatV2, animarSalidaFlatV2,
+  scanner,   // ← esto es lo nuevo
 })
 
 // ── Selective Bloom ──
@@ -274,6 +308,7 @@ const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 })
 const materialsMap = {}
 
 function darkenNonBloomed(obj) {
+  if (excluidos.has(obj.uuid)) return
   if (obj.isMesh && !obj.layers.isEnabled(BLOOM_LAYER) && !obj.layers.isEnabled(CANCHA_BLOOM_LAYER)) {
     materialsMap[obj.uuid] = obj.material
     obj.material = darkMaterial
@@ -336,8 +371,8 @@ const clock = new THREE.Clock()
 function animate() {
   requestAnimationFrame(animate)
 
-  const t  = clock.getElapsedTime()
-  const dt = clock.getDelta()
+  const dt = clock.getDelta()           // ← primero delta
+  const t  = clock.getElapsedTime()    // ← luego elapsed
   const pulse = 0.85 + Math.sin(t * 1.5) * 0.15
   allLines.forEach(m => { m.material.emissiveIntensity = pulse })
 
@@ -354,6 +389,9 @@ function animate() {
   tickZonasPases(camera)
   tickEventos(camera)
   tickSpiderChart(camera)
+
+  // Actualizar scanner
+  scanner.update(dt)
 
   scene.traverse(child => {
     if (child.userData.esFicha === true) child.lookAt(camera.position)
@@ -378,8 +416,6 @@ function animate() {
   grupoEventos.visible      = false
   grupoVentana3D.visible    = false
   grupoSpider3D.visible     = false
-  // meshHeatmapFlat tiene BLOOM_LAYER activo — darkenNonBloomed lo respeta
-  // y NO se oculta aquí para que se renderice en ambos passes
 
   const spriteEquipo     = grupoEquipo.children.find(c => c.isSprite)
   const spriteEraVisible = spriteEquipo ? spriteEquipo.visible : false
@@ -389,10 +425,27 @@ function animate() {
   ocultarPuntasDash()
   ocultarPuntasParabola()
 
+  // Ocultar heatmaps durante bloom pass
+  const visiblesV2   = meshesV2.map(m => m.visible)
+  meshesV2.forEach(m => { m.visible = false })
+  const flatEraVisible = meshHeatmapFlat.visible
+  meshHeatmapFlat.visible = false
+
+  // Ocultar scanner durante bloom pass (ya usa AdditiveBlending propio)
+  const scannerEraVisible = scanner._group.visible
+  scanner._group.visible  = false
+
   scene.traverse(darkenNonBloomed)
   bloomComposer.render()
   scene.traverse(restoreMaterials)
   scene.background = bg
+
+  // Restaurar heatmaps
+  meshesV2.forEach((m, i) => { m.visible = visiblesV2[i] })
+  meshHeatmapFlat.visible = flatEraVisible
+
+  // Restaurar scanner
+  scanner._group.visible = scannerEraVisible
 
   grupoJugadores.visible    = jugadoresEranVisibles
   grupoEquipo.visible       = equipoEraVisible

@@ -1,36 +1,7 @@
 // src/cancha/eventos-cancha.js
-// Símbolos de eventos en coordenadas de la cancha
-// Siempre miran a la cámara (lookAt en tick)
-//
-// TIPOS DE SÍMBOLO: 'circulo' | 'hexagono' | 'cuadrado' | 'diamante' | 'triangulo'
-//
-// COLORES DISPONIBLES:
-//   '#0752E4' | '#7BA4F5' | '#FFFFFF' | '#F8F899'
-//   '#EA6500' | '#EA8900' | '#F7B203' | '#F3D662'
-//
-// USO EN script.js:
-//
-//   import { createEventosCancha } from './cancha/eventos-cancha.js'
-//
-//   const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
-//     { x: -20, z: -10, tipo: 'circulo',   color: '#EA6500' },
-//     { x:   5, z:  15, tipo: 'hexagono',  color: '#0752E4' },
-//     { x:  30, z:  -5, tipo: 'cuadrado',  color: '#F7B203' },
-//     { x: -10, z:  20, tipo: 'diamante',  color: '#FFFFFF' },
-//     { x:  15, z: -20, tipo: 'triangulo', color: '#7BA4F5' },
-//   ])
-//
-//   // En el loop:
-//   tickEventos(camera)
-
 import * as THREE from 'three'
+import gsap from 'gsap'
 
-const COLORES = [
-  '#0752E4', '#7BA4F5', '#FFFFFF', '#F8F899',
-  '#EA6500', '#EA8900', '#F7B203', '#F3D662',
-]
-
-// ── Helpers para convertir hex a rgba ────────────────────────────────────────
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
@@ -38,7 +9,6 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-// ── Canvas por tipo de símbolo ────────────────────────────────────────────────
 function crearCanvasSimbolo(tipo, color) {
   const S  = 4
   const W  = 64 * S
@@ -61,81 +31,59 @@ function crearCanvasSimbolo(tipo, color) {
   ctx.lineJoin    = 'round'
 
   switch (tipo) {
-
     case 'circulo': {
       const r = W * 0.36
-      ctx.beginPath()
-      ctx.arc(cx, cy, r, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.stroke()
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.fill(); ctx.stroke()
       break
     }
-
     case 'hexagono': {
       const r = W * 0.38
       ctx.beginPath()
       for (let i = 0; i < 6; i++) {
         const angle = (Math.PI / 3) * i - Math.PI / 6
-        const x = cx + r * Math.cos(angle)
-        const y = cy + r * Math.sin(angle)
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+        i === 0
+          ? ctx.moveTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle))
+          : ctx.lineTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle))
       }
-      ctx.closePath()
-      ctx.fill()
-      ctx.stroke()
+      ctx.closePath(); ctx.fill(); ctx.stroke()
       break
     }
-
     case 'cuadrado': {
       const lado = W * 0.62
-      const x0   = cx - lado / 2
-      const y0   = cy - lado / 2
-      ctx.beginPath()
-      ctx.rect(x0, y0, lado, lado)
-      ctx.fill()
-      ctx.stroke()
+      ctx.beginPath(); ctx.rect(cx - lado / 2, cy - lado / 2, lado, lado)
+      ctx.fill(); ctx.stroke()
       break
     }
-
     case 'diamante': {
       const r = W * 0.38
       ctx.beginPath()
-      ctx.moveTo(cx,     cy - r)   // top
-      ctx.lineTo(cx + r, cy)       // right
-      ctx.lineTo(cx,     cy + r)   // bottom
-      ctx.lineTo(cx - r, cy)       // left
-      ctx.closePath()
-      ctx.fill()
-      ctx.stroke()
+      ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy)
+      ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy)
+      ctx.closePath(); ctx.fill(); ctx.stroke()
       break
     }
-
     case 'triangulo': {
-      const r  = W * 0.40
-      const h  = r * Math.sqrt(3)
+      const r = W * 0.40
+      const h = r * Math.sqrt(3)
       ctx.beginPath()
-      ctx.moveTo(cx,         cy - h * 0.6)  // top
-      ctx.lineTo(cx + r,     cy + h * 0.4)  // bottom-right
-      ctx.lineTo(cx - r,     cy + h * 0.4)  // bottom-left
-      ctx.closePath()
-      ctx.fill()
-      ctx.stroke()
+      ctx.moveTo(cx, cy - h * 0.6)
+      ctx.lineTo(cx + r, cy + h * 0.4)
+      ctx.lineTo(cx - r, cy + h * 0.4)
+      ctx.closePath(); ctx.fill(); ctx.stroke()
       break
     }
-
-    default:
-      break
+    default: break
   }
 
   return new THREE.CanvasTexture(canvas)
 }
 
-// ── Factory ───────────────────────────────────────────────────────────────────
 export function createEventosCancha(scene, eventos = [], opciones = {}) {
 
   const {
-    offsetY  = 0.5,    // altura sobre la cancha
-    tamano   = 1.6,      // 40% de 4
+    offsetY = 0.5,
+    tamano  = 1.6,
   } = opciones
 
   const grupo = new THREE.Group()
@@ -145,45 +93,149 @@ export function createEventosCancha(scene, eventos = [], opciones = {}) {
   const sprites = []
 
   eventos.forEach(evento => {
-    const {
-      x     = 0,
-      z     = 0,
-      tipo  = 'circulo',
-      color = '#FFFFFF',
-    } = evento
+    const { x = 0, z = 0, tipo = 'circulo', color = '#FFFFFF' } = evento
 
     const tex = crearCanvasSimbolo(tipo, color)
     const mat = new THREE.SpriteMaterial({
       map:         tex,
       transparent: true,
       depthWrite:  false,
+      opacity:     0,
     })
     const sprite = new THREE.Sprite(mat)
-    sprite.scale.set(tamano, tamano, 1)
+    sprite.scale.set(0, 0, 1)           // empieza en escala 0
     sprite.position.set(x, offsetY, z)
     sprite.renderOrder = 30
+    sprite.visible = false
     grupo.add(sprite)
-    sprites.push(sprite)
+    sprites.push({ sprite, x, z, tipo, color })
   })
+
+  // ── Estado ────────────────────────────────────────────────────────────────
+  let timers = []
+  let tweens  = []
+
+  function matarTodo() {
+    timers.forEach(t => clearTimeout(t))
+    timers = []
+    tweens.forEach(t => t && t.kill())
+    tweens = []
+  }
+
+  // ── ENTRADA ───────────────────────────────────────────────────────────────
+  // Los símbolos aparecen escalonados con pop de escala:
+  //   1. Escala 0 → 1.3 (pop rápido)
+  //   2. Escala 1.3 → 1.0 (asentarse)
+  //   opacity 0 → 1 en paralelo con el pop
+  function animarEntrada(onComplete) {
+    matarTodo()
+    grupo.visible = true
+
+    // Reset
+    sprites.forEach(({ sprite }) => {
+      sprite.visible = false
+      sprite.material.opacity = 0
+      sprite.scale.set(0, 0, 1)
+    })
+
+    const stagger = 0.045
+
+    sprites.forEach(({ sprite }, i) => {
+      const delay = i * stagger
+      timers.push(setTimeout(() => {
+        sprite.visible = true
+
+        // Pop de escala suave — sube directo a tamaño final con elastic leve
+        tweens.push(gsap.to(sprite.scale, {
+          x: tamano,
+          y: tamano,
+          duration: 0.55,
+          ease: 'elastic.out(1, 0.6)',
+        }))
+
+        // Fade in en paralelo
+        tweens.push(gsap.to(sprite.material, {
+          opacity: 1.0,
+          duration: 0.3,
+          ease: 'power2.out',
+        }))
+
+      }, delay * 1000))
+    })
+
+    // onComplete cuando termina el último
+    if (onComplete) {
+      const duracion = sprites.length * stagger + 0.4
+      timers.push(setTimeout(onComplete, duracion * 1000))
+    }
+  }
+
+  // ── SALIDA ────────────────────────────────────────────────────────────────
+  // Orden inverso — implosión de escala + fade out
+  function animarSalida(onComplete) {
+    matarTodo()
+
+    const stagger   = 0.035
+    const invertido = [...sprites].reverse()
+
+    invertido.forEach(({ sprite }, i) => {
+      const delay = i * stagger
+      timers.push(setTimeout(() => {
+        // Implosión
+        tweens.push(gsap.to(sprite.scale, {
+          x: 0,
+          y: 0,
+          duration: 0.2,
+          ease: 'power2.in',
+          onComplete() { sprite.visible = false },
+        }))
+        // Fade out
+        tweens.push(gsap.to(sprite.material, {
+          opacity: 0,
+          duration: 0.15,
+          ease: 'power2.in',
+        }))
+      }, delay * 1000))
+    })
+
+    const duracion = invertido.length * stagger + 0.3
+    timers.push(setTimeout(() => {
+      grupo.visible = false
+      // Reset para próxima entrada
+      sprites.forEach(({ sprite }) => {
+        sprite.scale.set(0, 0, 1)
+        sprite.material.opacity = 0
+        sprite.visible = false
+      })
+      if (onComplete) onComplete()
+    }, duracion * 1000))
+  }
 
   // ── Botón ──────────────────────────────────────────────────────────────────
   const btn = document.createElement('button')
   btn.textContent = 'Eventos'
   btn.className   = 'btn'
   btn.addEventListener('click', function () {
-    grupo.visible = !grupo.visible
-    this.classList.toggle('active', grupo.visible)
+    if (!grupo.visible) {
+      animarEntrada()
+      this.classList.add('active')
+    } else {
+      animarSalida(() => this.classList.remove('active'))
+    }
   })
   document.getElementById('cc-controls').appendChild(btn)
 
-  // ── Tick — lookAt cámara ───────────────────────────────────────────────────
+  // ── Tick ───────────────────────────────────────────────────────────────────
   function tickEventos(camera) {
     if (!grupo.visible) return
-    sprites.forEach(s => s.lookAt(camera.position))
+    sprites.forEach(({ sprite }) => {
+      if (sprite.visible) sprite.lookAt(camera.position)
+    })
   }
 
-  // ── Actualizar eventos en caliente ─────────────────────────────────────────
+  // ── Actualizar eventos ─────────────────────────────────────────────────────
   function updateEventos(nuevosEventos) {
+    matarTodo()
     while (grupo.children.length > 0) {
       const child = grupo.children[0]
       if (child.material?.map) child.material.map.dispose()
@@ -194,16 +246,19 @@ export function createEventosCancha(scene, eventos = [], opciones = {}) {
 
     nuevosEventos.forEach(evento => {
       const { x = 0, z = 0, tipo = 'circulo', color = '#FFFFFF' } = evento
-      const tex    = crearCanvasSimbolo(tipo, color)
-      const mat    = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
+      const tex = crearCanvasSimbolo(tipo, color)
+      const mat = new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthWrite: false, opacity: 0,
+      })
       const sprite = new THREE.Sprite(mat)
-      sprite.scale.set(tamano, tamano, 1)
+      sprite.scale.set(0, 0, 1)
       sprite.position.set(x, offsetY, z)
       sprite.renderOrder = 30
+      sprite.visible = false
       grupo.add(sprite)
-      sprites.push(sprite)
+      sprites.push({ sprite, x, z, tipo, color })
     })
   }
 
-  return { grupo, sprites, tickEventos, updateEventos }
+  return { grupo, sprites, tickEventos, updateEventos, animarEntrada, animarSalida }
 }
