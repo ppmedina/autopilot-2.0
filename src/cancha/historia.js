@@ -55,7 +55,7 @@ export function createHistoria(refs) {
     grupoJugadores, grupoEquipo, grupoZona, grupoZonasPases,
     grupoEventos, grupoFlechas, grupoFlechasFlow, grupoFlechasDash,
     grupoParabola, grupoConexionesV2, grupoVentana3D, grupoSpider3D,
-    meshHeatmapFlat, statCardEl, chartCardEl, ventanaChartEl,
+    statCardEl, chartCardEl, ventanaChartEl,
     scanner,  // ← recibido desde script.js
   } = refs
 
@@ -64,7 +64,6 @@ export function createHistoria(refs) {
     grupoEventos, grupoFlechas, grupoFlechasFlow, grupoFlechasDash,
     grupoParabola, grupoConexionesV2, grupoVentana3D, grupoSpider3D,
   ]
-  if (meshHeatmapFlat) todosLosGrupos.push(meshHeatmapFlat)
   const todosLosDOM = [statCardEl, chartCardEl, ventanaChartEl]
 
   const CAPITULOS = [
@@ -231,204 +230,16 @@ export function createHistoria(refs) {
   function anterior()  { irA(capituloActual - 1) }
 
   function actualizarUI() {
-    const cap = CAPITULOS[capituloActual]
-    labelEl.textContent    = `${cap.icono} ${cap.nombre}`
-    contadorEl.textContent = `${capituloActual + 1} / ${CAPITULOS.length}`
-    btnAnterior.disabled   = capituloActual === 0
-    btnSiguiente.disabled  = capituloActual === CAPITULOS.length - 1
-    dots.forEach((dot, i) => dot.classList.toggle('historia-dot-activo', i === capituloActual))
+    // Sin nav visible — solo actualizar estado interno
   }
 
-  // ── Estilos ──────────────────────────────────────────────────────────────
-  if (!document.getElementById('historia-styles')) {
-    const style = document.createElement('style')
-    style.id = 'historia-styles'
-    style.textContent = `
-      #historia-nav-wrapper {
-        position: fixed;
-        bottom: 32px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-        z-index: 1000;
-        user-select: none;
-      }
-
-      /* ── Fila de herramientas (scanner, etc.) ── */
-      #historia-tools {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(6, 12, 26, 0.75);
-        border: 1px solid rgba(78, 211, 255, 0.2);
-        border-radius: 50px;
-        padding: 6px 14px;
-        backdrop-filter: blur(12px);
-      }
-      .tool-btn {
-        background: transparent;
-        border: 1px solid rgba(78, 211, 255, 0.3);
-        border-radius: 20px;
-        padding: 5px 14px;
-        color: rgba(78, 211, 255, 0.7);
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 10px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        white-space: nowrap;
-      }
-      .tool-btn:hover {
-        border-color: rgba(78, 211, 255, 0.7);
-        color: #4ED3FF;
-        box-shadow: 0 0 10px rgba(78, 211, 255, 0.2);
-      }
-      .tool-btn.tool-activo {
-        border-color: rgba(78, 211, 255, 0.9);
-        color: #9effff;
-        box-shadow: 0 0 14px rgba(78, 211, 255, 0.35), inset 0 0 8px rgba(78,211,255,0.06);
-        background: rgba(78, 211, 255, 0.07);
-      }
-      .tool-btn .tool-dot {
-        width: 5px;
-        height: 5px;
-        border-radius: 50%;
-        background: rgba(78, 211, 255, 0.4);
-        transition: background 0.2s, box-shadow 0.2s;
-      }
-      .tool-btn.tool-activo .tool-dot {
-        background: #4ED3FF;
-        box-shadow: 0 0 6px #4ED3FF;
-      }
-
-      /* ── Nav principal ── */
-      #historia-nav {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        background: rgba(6, 12, 26, 0.82);
-        border: 1px solid rgba(78, 211, 255, 0.3);
-        border-radius: 50px;
-        padding: 10px 20px;
-        backdrop-filter: blur(12px);
-      }
-      .historia-btn {
-        background: rgba(78, 211, 255, 0.1);
-        border: 1px solid rgba(78, 211, 255, 0.4);
-        border-radius: 50%;
-        width: 36px; height: 36px;
-        color: #4ED3FF;
-        font-size: 16px;
-        cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        transition: background 0.2s;
-      }
-      .historia-btn:hover:not(:disabled) { background: rgba(78, 211, 255, 0.25); }
-      .historia-btn:disabled { opacity: 0.3; cursor: default; }
-      #historia-label {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 13px;
-        color: #ffffff;
-        min-width: 140px;
-        text-align: center;
-      }
-      #historia-contador {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 11px;
-        color: rgba(255,255,255,0.4);
-      }
-      #historia-dots { display: flex; gap: 6px; align-items: center; }
-      .historia-dot {
-        width: 6px; height: 6px;
-        border-radius: 50%;
-        background: rgba(255,255,255,0.25);
-        cursor: pointer;
-        transition: background 0.2s, transform 0.2s;
-      }
-      .historia-dot-activo { background: #4ED3FF; transform: scale(1.4); }
-    `
-    document.head.appendChild(style)
-  }
-
-  // ── Wrapper que contiene ambas filas ─────────────────────────────────────
-  const wrapper = document.createElement('div')
-  wrapper.id = 'historia-nav-wrapper'
-
-  // ── Fila 1: herramientas (scanner + futuras) ─────────────────────────────
-  const toolsRow = document.createElement('div')
-  toolsRow.id = 'historia-tools'
-
-  // Botón scanner
-  const scannerBtn = document.createElement('button')
-  scannerBtn.className = 'tool-btn'
-  scannerBtn.id = 'scanner-toggle-btn'
-  scannerBtn.innerHTML = `<span class="tool-dot"></span> SCAN FIELD`
-
-  scannerBtn.addEventListener('click', () => {
-    if (scanner) {
-      scanner.toggle()
-      const isActive = scanner.active
-      scannerBtn.classList.toggle('tool-activo', isActive)
-    }
-  })
-
-  toolsRow.appendChild(scannerBtn)
-
-  // ── Fila 2: navegación de capítulos ─────────────────────────────────────
-  const nav = document.createElement('div')
-  nav.id = 'historia-nav'
-
-  const btnAnterior = document.createElement('button')
-  btnAnterior.className = 'historia-btn'
-  btnAnterior.innerHTML = '‹'
-  btnAnterior.addEventListener('click', anterior)
-
-  const labelEl = document.createElement('div')
-  labelEl.id = 'historia-label'
-
-  const contadorEl = document.createElement('div')
-  contadorEl.id = 'historia-contador'
-
-  const dotsEl = document.createElement('div')
-  dotsEl.id = 'historia-dots'
-  const dots = CAPITULOS.map((cap, i) => {
-    const dot = document.createElement('div')
-    dot.className = 'historia-dot'
-    dot.title = cap.nombre
-    dot.addEventListener('click', () => irA(i))
-    dotsEl.appendChild(dot)
-    return dot
-  })
-
-  const btnSiguiente = document.createElement('button')
-  btnSiguiente.className = 'historia-btn'
-  btnSiguiente.innerHTML = '›'
-  btnSiguiente.addEventListener('click', siguiente)
-
-  nav.appendChild(btnAnterior)
-  nav.appendChild(labelEl)
-  nav.appendChild(dotsEl)
-  nav.appendChild(contadorEl)
-  nav.appendChild(btnSiguiente)
-
-  wrapper.appendChild(toolsRow)
-  wrapper.appendChild(nav)
-  document.body.appendChild(wrapper)
-
+  // Teclado: flechas para navegar capítulos
   window.addEventListener('keydown', e => {
     if (e.key === 'ArrowRight') siguiente()
     if (e.key === 'ArrowLeft')  anterior()
   })
 
   CAPITULOS[0].entrada()
-  actualizarUI()
 
   return { irA, siguiente, anterior, CAPITULOS }
 }

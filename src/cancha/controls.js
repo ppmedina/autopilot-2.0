@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import * as TeamModule from './team.js'
 
-export function createControls({ renderer, camera, fieldMaterial, allLines, setLinesColor }) {
+export function createControls({ renderer, camera, fieldMaterial, allLines, setLinesColor, scanner }) {
 
   // ── Cámara orbital ──
   let isDragging  = false
@@ -95,6 +95,10 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
       animateTo(Math.PI / 2, 0.52, 130)
       setTeamRotation(Math.PI, Math.PI / 2, Math.PI)
     },
+    'Diagonal': () => {
+      animateTo(Math.PI * 0.62, 0.44, 148)
+      setTeamRotation(Math.PI, Math.PI * 0.72, Math.PI)
+    },
   }
 
   Object.entries(views).forEach(([label, fn]) => {
@@ -104,6 +108,18 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
     btn.addEventListener('click', fn)
     document.getElementById('cc-controls').appendChild(btn)
   })
+
+  // ── Botón Scanner — mismo estilo que los demás botones ──
+  if (scanner) {
+    const scanBtn = document.createElement('button')
+    scanBtn.textContent = 'Scan Field'
+    scanBtn.className   = 'btn'
+    scanBtn.addEventListener('click', () => {
+      scanner.toggle()
+      scanBtn.classList.toggle('active', scanner.active)
+    })
+    document.getElementById('cc-controls').appendChild(scanBtn)
+  }
 
   // ── Loop de animación ──
   function tickCamera() {
@@ -134,7 +150,6 @@ export function createControls({ renderer, camera, fieldMaterial, allLines, setL
     }
   }
 
-  // ── Exportar phi actual para que otros módulos detecten la vista ──
   function getPhi() { return phi }
 
   return { tickCamera, getPhi }
