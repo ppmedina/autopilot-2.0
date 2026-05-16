@@ -3,103 +3,171 @@ import * as THREE from 'three'
 import gsap from 'gsap'
 
 const FLECHAS_EJEMPLO = [
-  { de: { x: -27, z: 14 }, a: { x: 30, z: -19 }, estilo: 'linea' },
-  { de: { x: -27, z: 14 }, a: { x: 30, z: -19 }, estilo: 'dash'  },
+  { de: { x: -27, z: 14 }, a: { x: 30, z: -19 } },
 ]
 
-const COLOR_ORIGEN  = new THREE.Color(10/255,  40/255, 160/255)
-const COLOR_DESTINO = new THREE.Color(120/255, 200/255, 255/255)
+const COLOR_INICIO  = new THREE.Color(0x2097FF)   // azul oscuro en origen
+const COLOR_FIN     = new THREE.Color(0x68D9FF)   // cyan brillante en destino
 
+// ── Generar puntos de la parábola ────────────────────────────────────────────
 function generarPuntosParabola(inicio, fin, alturaArco, segmentos) {
-  segmentos = segmentos || 60
   const medio = new THREE.Vector3().addVectors(inicio, fin).multiplyScalar(0.5)
   medio.y += alturaArco
   return new THREE.QuadraticBezierCurve3(inicio, medio, fin).getPoints(segmentos)
 }
 
-function crearTexturaDashParabola() {
-  const w = 512, h = 16
-  const canvas = document.createElement('canvas')
-  canvas.width = w; canvas.height = h
-  const ctx = canvas.getContext('2d')
-  ctx.clearRect(0, 0, w, h)
-  let x = 0
-  while (x < w) {
-    const t    = x / w
-    const size = 5 + t * 8
-    const gap  = 1 + (1 - t) * 2
-    const r    = Math.round(COLOR_ORIGEN.r*255 + t*(COLOR_DESTINO.r-COLOR_ORIGEN.r)*255)
-    const g    = Math.round(COLOR_ORIGEN.g*255 + t*(COLOR_DESTINO.g-COLOR_ORIGEN.g)*255)
-    const b    = Math.round(COLOR_ORIGEN.b*255 + t*(COLOR_DESTINO.b-COLOR_ORIGEN.b)*255)
-    const a    = 0.4 + t * 0.6
-    ctx.fillStyle = 'rgba('+r+','+g+','+b+','+a+')'
-    ctx.fillRect(x, h/2 - size/2, size, size)
-    x += size + gap
+// ── Crear guiones a lo largo de la curva ────────────────────────────────────
+// Cada guión es un plano 3D orientado tangente a la curva en ese punto
+function construirGuionesParabola(puntos, dashLong, gapLong, anchoMin, anchoMax) {
+  const grupo   = new THREE.Group()
+  const guiones = []
+
+  // Calcular longitudes acumuladas entre puntos
+  const longAcum = [0]
+  for (let i = 1; i < puntos.length; i++) {
+    longAcum.push(longAcum[i-1] + puntos[i].distanceTo(puntos[i-1]))
   }
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.wrapS = THREE.RepeatWrapping
-  return tex
+  const longTotal = longAcum[longAcum.length - 1]
+
+  // Helper: posición e interpolación en la curva dado una distancia acumulada
+  function puntoPorDistancia(d) {
+    d = Math.max(0, Math.min(d, longTotal))
+    let i = 0
+    while (i < longAcum.length - 1 && longAcum[i+1] < d) i++
+    const segLen = longAcum[i+1] - longAcum[i]
+    const t = segLen > 0 ? (d - longAcum[i]) / segLen : 0
+    const pos = new THREE.Vector3().lerpVectors(puntos[i], puntos[Math.min(i+1, puntos.length-1)], t)
+    const dir = new THREE.Vector3().subVectors(
+      puntos[Math.min(i+1, puntos.length-1)], puntos[i]
+    ).normalize()
+    return { pos, dir, t: d / longTotal }
+  }
+
+  let d = 0, enDash = true
+  while (d < longTotal) {
+    const segLen = enDash ? dashLong : gapLong
+
+    if (enDash) {
+      const d0   = d
+      const d1   = Math.min(d + dashLong, longTotal)
+      const tMid = ((d0 + d1) * 0.5) / longTotal
+
+      const { pos: p0, dir: dir0 } = puntoPorDistancia(d0)
+      const { pos: p1, dir: dir1 } = puntoPorDistancia(d1)
+
+      // Usar la tangente 3D del punto medio para orientar el plano
+      const { dir: dirMid } = puntoPorDistancia((d0+d1)*0.5)
+      const up   = Math.abs(dirMid.y) < 0.9 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0)
+      const perp = new THREE.Vector3().crossVectors(dirMid, up).normalize()
+
+      // Color y alpha interpolados: brillante en el destino
+      const col = new THREE.Color().lerpColors(COLOR_INICIO, COLOR_FIN, tMid)
+      const alpha = 0.1 + tMid * 0.9
+
+      // Ancho variable: delgado en origen, grueso en destino
+      const anchoEn = (t) => anchoMin + (anchoMax - anchoMin) * t
+      const a0 = anchoEn(d0 / longTotal)
+      const a1 = anchoEn(d1 / longTotal)
+
+      const v0 = p0.clone().addScaledVector(perp,  a0 * 0.5)
+      const v1 = p0.clone().addScaledVector(perp, -a0 * 0.5)
+      const v2 = p1.clone().addScaledVector(perp, -a1 * 0.5)
+      const v3 = p1.clone().addScaledVector(perp,  a1 * 0.5)
+
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(
+        new Float32Array([v0.x,v0.y,v0.z, v1.x,v1.y,v1.z, v2.x,v2.y,v2.z, v3.x,v3.y,v3.z]), 3
+      ))
+      geo.setIndex(new THREE.BufferAttribute(new Uint16Array([0,1,2, 0,2,3]), 1))
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: col, transparent: true, opacity: alpha,
+        depthWrite: false, side: THREE.DoubleSide,
+      })
+      const mesh = new THREE.Mesh(geo, mat)
+      mesh.renderOrder = 3
+      mesh.visible = false
+      grupo.add(mesh)
+      guiones.push({ mesh, dFin: d1, longTotal })
+    }
+
+    d += segLen
+    enDash = !enDash
+  }
+
+  return { grupo, guiones, longTotal }
 }
 
-function crearGeoCurvaColoreada(puntos) {
-  const positions = [], colors = []
-  const total = puntos.length
-  puntos.forEach(function(p, i) {
-    positions.push(p.x, p.y, p.z)
-    const t = i / (total - 1)
-    const c = new THREE.Color().lerpColors(COLOR_ORIGEN, COLOR_DESTINO, t)
-    const a = 0.3 + t * 0.7
-    colors.push(c.r*a, c.g*a, c.b*a)
-  })
+// ── Punta reutilizable con vértices actualizables ────────────────────────────
+function crearPuntaMesh(tamano) {
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors, 3))
-  return geo
-}
-
-function crearPuntaParabola(posicion, dirXZ, tamano) {
-  tamano = tamano || 2.5
-  const perp  = new THREE.Vector3(-dirXZ.z, 0, dirXZ.x)
-  const punta = posicion.clone().addScaledVector(dirXZ,  tamano * 0.8)
-  const baseL = posicion.clone().addScaledVector(perp,   tamano * 0.5)
-  const baseR = posicion.clone().addScaledVector(perp,  -tamano * 0.5)
-  const positions = new Float32Array([
-    punta.x, punta.y, punta.z,
-    baseL.x, baseL.y, baseL.z,
-    baseR.x, baseR.y, baseR.z,
-  ])
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3))
   geo.setIndex(new THREE.BufferAttribute(new Uint16Array([0,1,2]), 1))
   const mat = new THREE.MeshBasicMaterial({
-    color: COLOR_DESTINO, transparent: true, opacity: 0.9,
+    color: COLOR_FIN, transparent: true, opacity: 0.95,
     depthWrite: false, side: THREE.DoubleSide,
   })
   const mesh = new THREE.Mesh(geo, mat)
-  mesh.renderOrder = 4
+  mesh.renderOrder = 5
+  mesh.visible = false
+  mesh.userData.tamano = tamano || 2.5
   return mesh
 }
+
+function actualizarPunta(mesh, pos, dir3D) {
+  if (!mesh || !dir3D) return
+  const tam  = mesh.userData.tamano
+  // Usar la tangente 3D completa para orientar la punta
+  const up   = Math.abs(dir3D.y) < 0.9 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0)
+  const perp = new THREE.Vector3().crossVectors(dir3D, up).normalize()
+  const tip  = pos.clone().addScaledVector(dir3D,  tam * 0.9)
+  const bL   = pos.clone().addScaledVector(perp,   tam * 0.55)
+  const bR   = pos.clone().addScaledVector(perp,  -tam * 0.55)
+  const pa   = mesh.geometry.attributes.position
+  pa.setXYZ(0, tip.x, tip.y, tip.z)
+  pa.setXYZ(1, bL.x,  bL.y,  bL.z)
+  pa.setXYZ(2, bR.x,  bR.y,  bR.z)
+  pa.needsUpdate = true
+  mesh.geometry.computeBoundingSphere()
+}
+
+// ── Helper: posición + tangente 3D en cualquier punto de la curva ─────────
+function getPosDir(puntos, v) {
+  const total = puntos.length
+  const i  = Math.min(Math.floor(v), total - 2)
+  const t  = v - Math.floor(v)
+  const pos = new THREE.Vector3().lerpVectors(puntos[i], puntos[i+1], t)
+  const dir = new THREE.Vector3().subVectors(puntos[i+1], puntos[i]).normalize()
+  return { pos, dir }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function createFlechasParabola(scene, flechas, opciones) {
   flechas  = flechas  || FLECHAS_EJEMPLO
   opciones = opciones || {}
 
-  const offsetY    = opciones.offsetY    !== undefined ? opciones.offsetY    : 4.0
-  const alturaArco = opciones.alturaArco !== undefined ? opciones.alturaArco : 18
-  const radioAro   = opciones.radioAro   !== undefined ? opciones.radioAro   : 4.5
-  const segmentos  = opciones.segmentos  !== undefined ? opciones.segmentos  : 60
+  const offsetY    = opciones.offsetY    ?? 4.0
+  const alturaArco = opciones.alturaArco ?? 18
+  const radioAro   = opciones.radioAro   ?? 4.5
+  const segmentos  = opciones.segmentos  ?? 80
+  const dashLong   = opciones.dashLong   ?? 0.6   // largo de cada guión en metros
+  const gapLong    = opciones.gapLong    ?? 0.4   // espacio entre guiones
+  const anchoMin   = opciones.anchoMin   ?? 0.28
+  const anchoMax   = opciones.anchoMax   ?? 0.56
+  const durEntrada = opciones.durEntrada ?? 1.2
+  const durSalida  = opciones.durSalida  ?? 0.9
+  const delayEntre = opciones.delayEntre ?? 0.15
 
   const grupo = new THREE.Group()
   grupo.position.y = offsetY
   grupo.visible    = false
   scene.add(grupo)
 
-  const lineasDashAnim = []
-  const puntasMesh     = []
-  const animables      = []
+  const flechasDatos = []
+  let   tweensActivos = []
 
-  flechas.forEach(function(flecha) {
-    const esDash  = flecha.estilo === 'dash'
+  flechas.forEach((flecha, fi) => {
     const inicio  = new THREE.Vector3(flecha.de.x, 0, flecha.de.z)
     const fin     = new THREE.Vector3(flecha.a.x,  0, flecha.a.z)
     const dir     = new THREE.Vector3().subVectors(fin, inicio).normalize()
@@ -107,153 +175,117 @@ export function createFlechasParabola(scene, flechas, opciones) {
     const finA    = fin.clone().addScaledVector(dir,    -radioAro)
     const puntos  = generarPuntosParabola(inicioA, finA, alturaArco, segmentos)
 
-    if (esDash) {
-      const medio  = new THREE.Vector3().addVectors(inicioA, finA).multiplyScalar(0.5).setY(alturaArco)
-      const curva  = new THREE.QuadraticBezierCurve3(inicioA, medio, finA)
-      const tuboGeo = new THREE.TubeGeometry(curva, segmentos, 0.18, 6, false)
-      const tex     = crearTexturaDashParabola()
-      const tuboMat = new THREE.MeshBasicMaterial({
-        map: tex, transparent: true, depthWrite: false,
-        blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      })
-      const tubo = new THREE.Mesh(tuboGeo, tuboMat)
-      tubo.renderOrder = 3
-      grupo.add(tubo)
-      lineasDashAnim.push({ tex, velocidad: 0.4 })
-      animables.push({ tipo: 'dash', obj: tubo, puntos })
-    } else {
-      const geo = crearGeoCurvaColoreada(puntos)
-      geo.setDrawRange(0, 0)
-      const mat = new THREE.LineBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0.85,
-        blending: THREE.AdditiveBlending, linewidth: 1,
-      })
-      const linea = new THREE.Line(geo, mat)
-      linea.renderOrder = 3
-      grupo.add(linea)
-      animables.push({ tipo: 'linea', obj: linea, puntos })
-    }
+    const { grupo: grupoGuiones, guiones, longTotal } = construirGuionesParabola(
+      puntos, dashLong, gapLong, anchoMin, anchoMax
+    )
+    grupo.add(grupoGuiones)
 
-    // Punta estática al final
-    const penultimo = puntos[puntos.length - 2]
-    const ultimo    = puntos[puntos.length - 1]
-    const dirFinal  = new THREE.Vector3().subVectors(ultimo, penultimo).normalize()
-    const dirXZ     = new THREE.Vector3(dirFinal.x, 0, dirFinal.z).normalize()
-    const punta     = crearPuntaParabola(ultimo, dirXZ, 2.5)
-    punta.visible   = false
+    const punta = crearPuntaMesh(2.2)
     grupo.add(punta)
-    puntasMesh.push(punta)
+
+    // Posicionar punta en el inicio
+    const { pos: pos0, dir: dir0 } = getPosDir(puntos, 0)
+    actualizarPunta(punta, pos0, dir0)
+
+    flechasDatos.push({ puntos, guiones, punta, longTotal })
   })
 
-  // ── Animación de entrada — punta viaja, línea se revela ───────────────────
+  // ── Entrada ───────────────────────────────────────────────────────────────
   function animarEntrada(onComplete) {
+    tweensActivos.forEach(t => t.kill())
+    tweensActivos = []
     grupo.visible = true
-    puntasMesh.forEach(function(p) { p.visible = false })
 
-    // Punta móvil temporal
-    var puntaMovil = null
-    var puntaMovilIdx = -1
+    let completadas = 0
+    const check = () => {
+      completadas++
+      if (completadas >= flechasDatos.length && onComplete) onComplete()
+    }
 
-    animables.forEach(function(anim, idx) {
-      const pts    = anim.puntos
-      const total  = pts.length
+    flechasDatos.forEach((fd, fi) => {
+      const { puntos, guiones, punta, longTotal } = fd
+      const total = puntos.length
 
-      if (anim.tipo === 'linea') {
-        anim.obj.geometry.setDrawRange(0, 0)
+      // Reset
+      guiones.forEach(g => { g.mesh.visible = false })
+      const { pos: pos0, dir: dir0 } = getPosDir(puntos, 0)
+      actualizarPunta(punta, pos0, dir0)
+      punta.visible = true
 
-        // Crear punta móvil
-        const dir0  = new THREE.Vector3().subVectors(pts[1], pts[0]).normalize()
-        const dirXZ = new THREE.Vector3(dir0.x, 0, dir0.z).normalize()
-        puntaMovil    = crearPuntaParabola(pts[0], dirXZ, 2.5)
-        puntaMovilIdx = idx
-        grupo.add(puntaMovil)
+      const proxy = { v: 0 }
+      const tw = gsap.to(proxy, {
+        v: total - 1,
+        duration: durEntrada,
+        delay: fi * delayEntre,
+        ease: 'power1.inOut',
+        onUpdate() {
+          const { pos, dir } = getPosDir(puntos, proxy.v)
+          actualizarPunta(punta, pos, dir)
 
-        const proxy = { v: 0 }
-        gsap.to(proxy, {
-          v: total - 1, duration: 1.4, delay: idx * 0.15, ease: 'power1.inOut',
-          onUpdate: function() {
-            const i   = Math.floor(proxy.v)
-            const iN  = Math.min(i + 1, total - 1)
-            const t   = proxy.v - i
-            const pos = new THREE.Vector3().lerpVectors(pts[i], pts[iN], t)
-            const dir = new THREE.Vector3().subVectors(pts[iN], pts[i]).normalize()
-            const dXZ = new THREE.Vector3(dir.x, 0, dir.z).normalize()
-
-            anim.obj.geometry.setDrawRange(0, i + 2)
-
-            // Actualizar vértices de la punta móvil
-            if (puntaMovil && dXZ.length() > 0.001) {
-              const tam  = 2.5
-              const perp = new THREE.Vector3(-dXZ.z, 0, dXZ.x)
-              const tip  = pos.clone().addScaledVector(dXZ,  tam * 0.8)
-              const bL   = pos.clone().addScaledVector(perp,  tam * 0.5)
-              const bR   = pos.clone().addScaledVector(perp, -tam * 0.5)
-              const pa   = puntaMovil.geometry.attributes.position
-              pa.setXYZ(0, tip.x, tip.y, tip.z)
-              pa.setXYZ(1, bL.x,  bL.y,  bL.z)
-              pa.setXYZ(2, bR.x,  bR.y,  bR.z)
-              pa.needsUpdate = true
-              puntaMovil.geometry.computeBoundingSphere()
-            }
-          },
-          onComplete: function() {
-            anim.obj.geometry.setDrawRange(0, total)
-            // Reemplazar punta móvil por la estática
-            if (puntaMovil) { grupo.remove(puntaMovil); puntaMovil = null }
-            puntasMesh[idx].visible = true
-            if (onComplete) onComplete()
-          }
-        })
-
-      } else {
-        // Dash — fade in completo
-        anim.obj.material.opacity = 0
-        gsap.to(anim.obj.material, {
-          opacity: 1, duration: 1.4, delay: idx * 0.15, ease: 'power1.inOut',
-          onComplete: function() {
-            puntasMesh[idx].visible = true
-          }
-        })
-      }
+          // Distancia acumulada hasta la punta
+          const fraccion = proxy.v / (total - 1)
+          const dActual  = fraccion * longTotal
+          guiones.forEach(g => { g.mesh.visible = g.dFin <= dActual })
+        },
+        onComplete() {
+          const { pos, dir } = getPosDir(puntos, total - 1)
+          actualizarPunta(punta, pos, dir)
+          guiones.forEach(g => { g.mesh.visible = true })
+          check()
+        },
+      })
+      tweensActivos.push(tw)
     })
   }
 
-  // ── Animación de salida ──────────────────────────────────────────────────
+  // ── Salida ────────────────────────────────────────────────────────────────
   function animarSalida(onComplete) {
-    puntasMesh.forEach(function(p) { p.visible = false })
-    animables.forEach(function(anim, i) {
-      if (anim.tipo === 'linea') {
-        const total = anim.puntos.length
-        const proxy = { v: total }
-        gsap.to(proxy, {
-          v: 0, duration: 0.6, delay: i * 0.05, ease: 'power2.in',
-          onUpdate:   function() { anim.obj.geometry.setDrawRange(0, Math.round(proxy.v)) },
-          onComplete: function() { anim.obj.geometry.setDrawRange(0, 0) }
-        })
-      } else {
-        gsap.to(anim.obj.material, { opacity: 0, duration: 0.6, delay: i * 0.05, ease: 'power2.in' })
-      }
-    })
-    gsap.delayedCall(0.8, function() {
+    tweensActivos.forEach(t => t.kill())
+    tweensActivos = []
+
+    gsap.delayedCall(durSalida, () => {
       grupo.visible = false
       if (onComplete) onComplete()
     })
+
+    flechasDatos.forEach(fd => {
+      const { puntos, guiones, punta, longTotal } = fd
+      const total = puntos.length
+
+      const proxy = { v: total - 1 }
+      gsap.to(proxy, {
+        v: 0,
+        duration: durSalida,
+        ease: 'power2.in',
+        onUpdate() {
+          const { pos, dir } = getPosDir(puntos, proxy.v)
+          actualizarPunta(punta, pos, dir)
+
+          const fraccion = proxy.v / (total - 1)
+          const dActual  = fraccion * longTotal
+          guiones.forEach(g => { g.mesh.visible = g.dFin <= dActual })
+        },
+        onComplete() {
+          guiones.forEach(g => { g.mesh.visible = false })
+          punta.visible = false
+        },
+      })
+    })
   }
 
-  function tickFlechasParabola(dt) {
-    if (!grupo.visible) return
-    lineasDashAnim.forEach(function(item) { item.tex.offset.x -= item.velocidad * dt })
+  function tickFlechasParabola(dt) {}
+
+  function ocultarPuntasParabola() { flechasDatos.forEach(fd => { fd.punta.visible = false }) }
+  function mostrarPuntasParabola() {
+    if (grupo.visible) flechasDatos.forEach(fd => { fd.punta.visible = true })
   }
 
-  function ocultarPuntasParabola() { puntasMesh.forEach(function(p) { p.visible = false }) }
-  function mostrarPuntasParabola() { puntasMesh.forEach(function(p) { p.visible = true  }) }
-
-  var btn = document.createElement('button')
+  const btn = document.createElement('button')
   btn.textContent = 'Pase largo'
   btn.className   = 'btn'
-  btn.addEventListener('click', function() {
-    if (!grupo.visible) { animarEntrada(); btn.classList.add('active') }
-    else { animarSalida(function() { btn.classList.remove('active') }) }
+  btn.addEventListener('click', function () {
+    if (!grupo.visible) { animarEntrada(); this.classList.add('active') }
+    else { animarSalida(() => this.classList.remove('active')) }
   })
   document.getElementById('cc-controls').appendChild(btn)
 

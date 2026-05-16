@@ -25,6 +25,7 @@ import { createEquipoCard }      from './cancha/equipo-card.js'
 import { createFlechas }         from './cancha/flechas.js'
 import { createFlechasFlow }     from './cancha/flechas-flow.js'
 import { createFlechasDash }     from './cancha/flechas-dash.js'
+import { createFlechasDisparo }  from './cancha/flechas-disparo.js'
 import { JUGADORES }             from './cancha/jugadores.js'
 import { createStatCard }        from './cancha/stat-card.js'
 import { createChartStatCard }   from './cancha/chart-stat-card.js'
@@ -145,19 +146,26 @@ const FLECHAS_FLOW = [
 ]
 const { grupo: grupoFlechasFlow, tickFlechasFlow, ocultarPuntasFlow, mostrarPuntasFlow } = createFlechasFlow(scene, FLECHAS_FLOW)
 
-// ── Flechas Dash ──
+// ── Flechas Dash — solo pases, sin disparo ──
 const FLECHAS_DASH = [
-  { de: jxz(5), a: jxz(9),           estilo: 'dash'    },
-  { de: jxz(6), a: jxz(5),           estilo: 'dash'    },
-  { de: jxz(6), a: jxz(9),           estilo: 'dash'    },
-  { de: jxz(9), a: { x: 51, z: -1 }, estilo: 'disparo', radioDestino: 0 },
+  { de: jxz(5), a: jxz(9) },
+  { de: jxz(6), a: jxz(5) },
+  { de: jxz(6), a: jxz(9) },
 ]
-const { grupo: grupoFlechasDash, tickFlechasDash, ocultarPuntasDash, mostrarPuntasDash } = createFlechasDash(scene, FLECHAS_DASH)
+const { grupo: grupoFlechasDash, tickFlechasDash, ocultarPuntasDash, mostrarPuntasDash,
+        animarEntrada: animarEntradaDash, animarSalida: animarSalidaDash } = createFlechasDash(scene, FLECHAS_DASH)
+
+// ── Flechas Disparo ──
+const FLECHAS_DISPARO = [
+  { de: jxz(9), a: { x: 51, z: -1 }, radioDestino: 0 },
+]
+const { grupo: grupoFlechasDisparo, tickFlechasDisparo,
+        ocultarPuntasDisparo, mostrarPuntasDisparo,
+        animarEntrada: animarEntradaDisparo, animarSalida: animarSalidaDisparo } = createFlechasDisparo(scene, FLECHAS_DISPARO)
 
 // ── Flechas Parabólicas ──
 const FLECHAS_PARABOLA = [
-  { de: jxz(29), a: jxz(7), estilo: 'linea' },
-  { de: jxz(29), a: jxz(7), estilo: 'dash'  },
+  { de: jxz(29), a: jxz(7) },  // ← sin estilo
 ]
 const {
   grupo:                grupoParabola,
@@ -195,8 +203,6 @@ const { wrapper: chartCardEl, tickChartStatCard } = createChartStatCard(scene, c
   },
 })
 
-// ── Controles ──
-
 // ── Scanner Effect ──────────────────────────────────────────────────────────
 const scanner = new ScannerEffect(scene, {
   width:       68,
@@ -213,7 +219,7 @@ scanner._group.traverse(obj => {
   if (obj.isMesh || obj.isPoints) excluidos.add(obj.uuid)
 })
 
-
+// ── Controles ──
 const { tickCamera, getPhi } = createControls({
   renderer, camera, fieldMaterial, allLines, setLinesColor, scanner,
 })
@@ -345,7 +351,6 @@ const finalComposer = new EffectComposer(renderer)
 finalComposer.addPass(new RenderPass(scene, camera))
 finalComposer.addPass(mixPass)
 
-// FXAA — suaviza el aliasing que el bloom pass introduce
 const fxaaPass = new ShaderPass(FXAAShader)
 fxaaPass.uniforms['resolution'].value.set(
   1 / (window.innerWidth  * window.devicePixelRatio),
@@ -380,6 +385,7 @@ function animate() {
   tickFlechas(dt, camera)
   tickFlechasFlow(dt)
   tickFlechasDash(dt)
+  tickFlechasDisparo(dt)
   tickFlechasParabola(dt)
   tickStatCard()
   tickChartStatCard()
@@ -418,6 +424,7 @@ function animate() {
   ocultarPuntas()
   ocultarPuntasFlow()
   ocultarPuntasDash()
+  ocultarPuntasDisparo()
   ocultarPuntasParabola()
 
   const scannerEraVisible = scanner._group.visible
@@ -442,6 +449,7 @@ function animate() {
   mostrarPuntas()
   mostrarPuntasFlow()
   mostrarPuntasDash()
+  mostrarPuntasDisparo()
   mostrarPuntasParabola()
 
   finalComposer.render()
