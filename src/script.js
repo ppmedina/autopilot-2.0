@@ -33,6 +33,7 @@ import { createFlechasParabola } from './cancha/flechas-parabola.js'
 import { createVentanaChart3D }  from './cancha/ventana-chart-3d.js'
 import { createSpiderChart3D }   from './cancha/spider-chart-3d.js'
 import { createHistoria }        from './cancha/historia.js'
+import { createHudTextInfo }     from './cancha/hud-text-info.js'
 import { ScannerEffect }         from './cancha/scanner-effect.js'
 
 // ── Inicializar escena base ──
@@ -291,6 +292,59 @@ createHistoria({
   animarEntradaParabola, animarSalidaParabola,
   scanner,
 })
+
+// ── HUD Text Info ──
+const textInfo = createHudTextInfo({
+  label: 'Analizando',
+  value: '247 acciones',
+  color: '#00f0ff',
+  position: 'bottom',
+  offsetY: 60,
+  glitchIntensity: 1.0,
+  flickerAmount: 0.5,
+  glowStrength: 1.0,
+})
+
+// Lista de textos que se irán mostrando en cada click
+const ESCENARIOS_TEXTO = [
+  { label: 'Analizando',  value: '247 acciones' },
+  { label: 'Analizando',  value: '99 acciones' },
+  { label: 'Analizando',  value: '1247 acciones' },
+  { label: 'Procesando',  value: 'Datos del partido completo' },
+  { label: 'Detectado',   value: '3 jugadores en zona crítica' },
+  { label: 'Conexiones',  value: '38 pases entre líneas' },
+  { label: 'Sistema',     value: 'Esperando entrada del usuario' },
+  { label: 'Radar',       value: '5%' },
+  { label: 'Posesión',    value: '64% del tiempo' },
+  { label: 'Defensa',     value: '12 recuperaciones' },
+  { label: 'Ataque',      value: '7 tiros a portería' },
+  { label: 'Ritmo',       value: 'Alta intensidad' },
+]
+let textInfoYaMostrado = false
+let ultimoEscenarioIdx = -1
+
+const btnTextInfo = document.createElement('button')
+btnTextInfo.className = 'btn'
+btnTextInfo.textContent = 'Text Info'
+btnTextInfo.onclick = () => {
+  if (!textInfoYaMostrado) {
+    // Primer click: animación de entrada con los valores iniciales
+    textInfo.show()
+    textInfoYaMostrado = true
+  } else {
+    // Clicks siguientes: escoger escenario random distinto al anterior
+    // y reproducir la secuencia ordenada (label → > → value)
+    let idx
+    do {
+      idx = Math.floor(Math.random() * ESCENARIOS_TEXTO.length)
+    } while (idx === ultimoEscenarioIdx && ESCENARIOS_TEXTO.length > 1)
+    ultimoEscenarioIdx = idx
+
+    const e = ESCENARIOS_TEXTO[idx]
+    textInfo.replay({ label: e.label, value: e.value })
+  }
+}
+document.querySelector('#cc-controls')?.appendChild(btnTextInfo)
 
 // ── Selective Bloom ──
 const bloomLayer   = new THREE.Layers()
