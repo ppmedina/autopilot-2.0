@@ -80,7 +80,7 @@ export function createHudInsightCard({
           -webkit-backdrop-filter 0.45s ease-out;
       }
       .hud-insight__card--filled {
-        background: rgba(14, 20, 33, 0.45);
+        background: rgba(5, 8, 14, 0.55);
         box-shadow: 0px 10.1834px 40.7337px rgba(3, 2, 4, 0.37);
         backdrop-filter: blur(15px);
         -webkit-backdrop-filter: blur(15px);
@@ -245,11 +245,13 @@ export function createHudInsightCard({
   borderSvg.setAttribute('class', 'hud-insight__border-svg')
   borderSvg.setAttribute('preserveAspectRatio', 'none')
 
-  const borderRect = document.createElementNS(SVG_NS, 'rect')
-  borderRect.setAttribute('class', 'hud-insight__border-rect')
-  borderRect.setAttribute('rx', '25.4585')
-  borderRect.setAttribute('ry', '25.4585')
-  borderSvg.appendChild(borderRect)
+  // Uso <path> en lugar de <rect> para definir el punto de inicio del trazado:
+  // debe arrancar en el CENTRO-INFERIOR del card (donde toca el conector
+  // vertical) y dibujar en sentido horario para que el trazo se sienta como
+  // una continuación natural del conector.
+  const borderPath = document.createElementNS(SVG_NS, 'path')
+  borderPath.setAttribute('class', 'hud-insight__border-rect')
+  borderSvg.appendChild(borderPath)
   cardEl.appendChild(borderSvg)
 
   const heroEl = document.createElement('div')
@@ -349,19 +351,48 @@ export function createHudInsightCard({
 
     const sw = 1.6
     const half = sw / 2
+    const r = 25.4585  // border-radius
 
     borderSvg.setAttribute('viewBox', `0 0 ${w} ${h}`)
-    borderRect.setAttribute('x', half)
-    borderRect.setAttribute('y', half)
-    borderRect.setAttribute('width', w - sw)
-    borderRect.setAttribute('height', h - sw)
 
-    const r = 25.4585
-    const perim = 2 * (w + h) - 8 * r + 2 * Math.PI * r
+    // ─── Construir el path del borde ──────────────────────────────────────
+    // Empieza en el CENTRO-INFERIOR del card (donde toca el conector vertical)
+    // y va en sentido ANTIHORARIO (hacia la izquierda primero):
+    //   centro-inf → borde inf-izq → esquina inf-izq → borde izq → esquina
+    //   sup-izq → borde superior → esquina sup-der → borde der → esquina
+    //   inf-der → borde inf-der → cierra en el centro-inferior.
+    //
+    // Antihorario porque visualmente el trazo del conector llega "subiendo"
+    // y el ojo lo sigue naturalmente girando hacia un lado completo, no
+    // dividido en dos mitades.
+
+    const cx = w / 2          // centro horizontal
+    const yBot = h - half     // borde inferior
+    const yTop = half         // borde superior
+    const xLeft = half        // borde izquierdo
+    const xRight = w - half   // borde derecho
+
+    const d = [
+      `M ${cx} ${yBot}`,                                  // start: centro inferior (punto de entrada del conector)
+      `L ${xLeft + r} ${yBot}`,                           // borde inferior hacia la izquierda
+      `a ${r} ${r} 0 0 1 ${-r} ${-r}`,                    // esquina inf-izq (gira hacia arriba)
+      `L ${xLeft} ${yTop + r}`,                           // borde izquierdo hacia arriba
+      `a ${r} ${r} 0 0 1 ${r} ${-r}`,                     // esquina sup-izq
+      `L ${xRight - r} ${yTop}`,                          // borde superior hacia la derecha
+      `a ${r} ${r} 0 0 1 ${r} ${r}`,                      // esquina sup-der
+      `L ${xRight} ${yBot - r}`,                          // borde derecho hacia abajo
+      `a ${r} ${r} 0 0 1 ${-r} ${r}`,                     // esquina inf-der
+      `L ${cx} ${yBot}`,                                  // cierra hacia el centro inferior
+    ].join(' ')
+
+    borderPath.setAttribute('d', d)
+
+    // Medir la longitud real del path (incluye arcos correctamente)
+    const perim = borderPath.getTotalLength()
     state.borderPerimeter = perim
 
-    borderRect.style.strokeDasharray  = `${perim}`
-    borderRect.style.strokeDashoffset = `${perim}`
+    borderPath.style.strokeDasharray  = `${perim}`
+    borderPath.style.strokeDashoffset = `${perim}`
   }
 
   // ---------------------------------------------------------------------------
@@ -386,7 +417,7 @@ export function createHudInsightCard({
     gsap.set(connectorDotEl, { scale: 0 })
     gsap.set(connectorEl,    { opacity: 0, scaleY: 0 })
     gsap.set(glowEl,         { opacity: 0 })
-    gsap.set(borderRect,     { strokeDashoffset: state.borderPerimeter })
+    gsap.set(borderPath,     { strokeDashoffset: state.borderPerimeter })
     gsap.set(heroEl,         { opacity: 0 })
     gsap.set(suffixEl,       { opacity: 0, y: 0 })
     gsap.set(labelEl,        { opacity: 0, y: 8 })
@@ -398,40 +429,64 @@ export function createHudInsightCard({
     const tl = gsap.timeline()
     state.masterTimeline = tl
 
+    // [0.00s] Aparece el connector dot (extremo inferior, donde está el anchor 3D)
     tl.to(connectorDotEl, {
       scale: 1,
       duration: 0.25,
       ease: 'back.out(2.5)',
     }, 0)
 
+    // ─── Trazo continuo: connector + borde del card ───────────────────────
+    // El trazo debe sentirse como UN SOLO movimiento que arranca en el dot,
+    // sube por la línea conectora vertical hasta tocar el card, y desde ahí
+    // contornea todo el card en sentido antihorario, cerrando en el mismo
+    // punto donde entró (centro-inferior).
+    //
+    // Para que la velocidad de trazado sea constante (px/s), las duraciones
+    // del connector y del borde se calculan en proporción a sus longitudes.
+
+    const connectorHeight = parseFloat(connectorEl.style.height) || 100
+    const totalTraceLength = connectorHeight + state.borderPerimeter
+    const totalTraceDuration = 1.4  // duración total del trazado (connector + borde)
+    const connectorDuration = totalTraceDuration * (connectorHeight / totalTraceLength)
+    const borderDuration    = totalTraceDuration * (state.borderPerimeter / totalTraceLength)
+
+    // [0.15s] Se dibuja la línea conectora (de abajo a arriba: del dot hacia el card)
     tl.to(connectorEl, {
       opacity: 1,
       scaleY: 1,
-      duration: 0.45,
-      ease: 'power2.out',
+      duration: connectorDuration,
+      ease: 'none',   // velocidad constante para que empalme con el borde sin saltos
     }, 0.15)
 
-    tl.to(borderRect, {
+    // [0.15 + connectorDuration] Sin pausa, sigue trazándose el borde del card.
+    //   Como el path arranca exactamente en el centro-inferior (donde toca el
+    //   conector), el trazo se ve continuo.
+    tl.to(borderPath, {
       strokeDashoffset: 0,
-      duration: 0.75,
-      ease: 'power2.inOut',
-    }, 0.5)
+      duration: borderDuration,
+      ease: 'none',   // velocidad constante igual al connector
+    }, 0.15 + connectorDuration)
 
+    // [~1.55s] Aparece el fondo del card una vez terminado el trazo
+    const fillStart = 0.15 + totalTraceDuration
     tl.add(() => {
       cardEl.classList.add('hud-insight__card--filled')
-    }, 1.10)
+    }, fillStart)
 
+    // [fillStart + 0.05s] Aparece el glow decorativo (esquina superior derecha)
     tl.to(glowEl, {
       opacity: 1,
       duration: 0.5,
       ease: 'power2.out',
-    }, 1.15)
+    }, fillStart + 0.05)
 
+    // [fillStart + 0.10s] Aparece el hero (número), arranca count up
     tl.to(heroEl, {
       opacity: 1,
       duration: 0.3,
       ease: 'power2.out',
-    }, 1.20)
+    }, fillStart + 0.10)
 
     if (countUp) {
       const obj = { v: 0 }
@@ -447,31 +502,34 @@ export function createHudInsightCard({
           state.currentValor = state.targetValor
           numberEl.textContent = String(Math.round(state.targetValor))
         },
-      }, 1.20)
+      }, fillStart + 0.10)
     } else {
       state.currentValor = state.targetValor
       numberEl.textContent = String(Math.round(state.targetValor))
     }
 
+    // [~fillStart + 0.82s] Aparece el sufijo "%"
     tl.to(suffixEl, {
       opacity: 1,
       duration: 0.35,
       ease: 'power2.out',
-    }, 1.20 + countDuration * 0.6)
+    }, fillStart + 0.10 + countDuration * 0.6)
 
+    // [~fillStart + 1.0s] Aparece la etiqueta con slide
     tl.to(labelEl, {
       opacity: 1,
       y: 0,
       duration: 0.4,
       ease: 'power2.out',
-    }, 1.20 + countDuration * 0.75)
+    }, fillStart + 0.10 + countDuration * 0.75)
 
+    // [~fillStart + 1.18s] Aparece la loading bar
     tl.to(loadingEl, {
       opacity: 1,
       duration: 0.3,
       ease: 'power2.out',
       onStart: () => loadingEl.classList.add('hud-insight__loading--playing'),
-    }, 1.20 + countDuration * 0.9)
+    }, fillStart + 0.10 + countDuration * 0.9)
   }
 
   function hide() {
@@ -520,7 +578,7 @@ export function createHudInsightCard({
 
     // [0.75s] Borde se desdibuja COMPLETO antes de tocar el connector
     //         Duración 0.55s → termina en 1.30s
-    tl.to(borderRect, {
+    tl.to(borderPath, {
       strokeDashoffset: state.borderPerimeter,
       duration: 0.55,
       ease: 'power2.inOut',
@@ -584,7 +642,7 @@ export function createHudInsightCard({
   function destroy() {
     if (state.masterTimeline) state.masterTimeline.kill()
     if (state.countTween) state.countTween.kill()
-    gsap.killTweensOf([el, cardEl, connectorEl, glowEl, heroEl, suffixEl, labelEl, loadingEl, borderRect, connectorDotEl])
+    gsap.killTweensOf([el, cardEl, connectorEl, glowEl, heroEl, suffixEl, labelEl, loadingEl, borderPath, connectorDotEl])
     if (el.parentNode) el.parentNode.removeChild(el)
   }
 

@@ -67,6 +67,71 @@ function crearCanvasSoloNombre(jugador) {
 
   return canvas
 }
+
+// ── Canvas solo corners — 4 esquinas en forma de L alrededor del círculo ─────
+// Se renderiza en un sprite separado para poder animar su opacidad/scale
+// independientemente del resto de la tarjeta.
+function crearCanvasCorners() {
+  const canvas = document.createElement('canvas')
+  canvas.width = CW; canvas.height = CH
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, CW, CH)
+
+  // Geometría de los corners:
+  // Las 4 L forman el CUADRADO CIRCUNSCRITO al círculo del jugador
+  // (es decir, las líneas tangentes al círculo en los puntos más alejados
+  // horizontal y vertical). Cada esquina del cuadrado está a distancia RADIO
+  // del centro, por lo que la L toca el círculo de manera tangencial.
+  const sep       = 0                   // sin separación: tangente al círculo
+  const brazoLen  = 28                  // longitud de cada brazo de la L
+  const grosor    = 5                   // grosor de la línea
+  const halfSide  = RADIO + sep         // distancia desde el centro a cada lado del cuadrado
+
+  // Esquinas del cuadrado: (xL, yT), (xR, yT), (xR, yB), (xL, yB)
+  const xL = CX - halfSide
+  const xR = CX + halfSide
+  const yT = CY_CIRC - halfSide
+  const yB = CY_CIRC + halfSide
+
+  ctx.save()
+  ctx.strokeStyle = '#4DD2FF'       // cyan brillante
+  ctx.lineWidth   = grosor
+  ctx.lineCap     = 'round'
+  ctx.shadowColor = '#4DD2FF'
+  ctx.shadowBlur  = 24
+
+  // Esquina superior-izquierda (L abre hacia abajo-derecha)
+  ctx.beginPath()
+  ctx.moveTo(xL, yT + brazoLen)
+  ctx.lineTo(xL, yT)
+  ctx.lineTo(xL + brazoLen, yT)
+  ctx.stroke()
+
+  // Esquina superior-derecha (L abre hacia abajo-izquierda)
+  ctx.beginPath()
+  ctx.moveTo(xR - brazoLen, yT)
+  ctx.lineTo(xR, yT)
+  ctx.lineTo(xR, yT + brazoLen)
+  ctx.stroke()
+
+  // Esquina inferior-derecha (L abre hacia arriba-izquierda)
+  ctx.beginPath()
+  ctx.moveTo(xR, yB - brazoLen)
+  ctx.lineTo(xR, yB)
+  ctx.lineTo(xR - brazoLen, yB)
+  ctx.stroke()
+
+  // Esquina inferior-izquierda (L abre hacia arriba-derecha)
+  ctx.beginPath()
+  ctx.moveTo(xL + brazoLen, yB)
+  ctx.lineTo(xL, yB)
+  ctx.lineTo(xL, yB - brazoLen)
+  ctx.stroke()
+
+  ctx.restore()
+  return canvas
+}
+
 // Plano de corte — nada se ve por debajo de Y=0 (superficie de la cancha)
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 
@@ -246,6 +311,12 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
   scene.add(grupo)
 
   const tarjetas = []
+  // Una sola textura de corners compartida por todos los jugadores
+  // (es idéntica en todos: el contenido depende solo de la geometría del círculo)
+  const corNersCanvasShared = crearCanvasCorners()
+
+  // ── Estado de selección (solo uno puede estar seleccionado) ──────────────
+  let seleccionadoActual = null   // número del jugador seleccionado, o null
 
   jugadores.forEach((jugador, idx) => {
     let imgCargada = null
@@ -259,9 +330,12 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
     const sprite  = new THREE.Sprite(mat)
     sprite.scale.set(escala, escala * aspect, 1)
     sprite.position.set(jugador.x, offsetY, jugador.z)
-    sprite.renderOrder = 50 + idx * 3
+    sprite.renderOrder = 50 + idx * 4
     sprite.layers.set(0)
     sprite.visible = false
+    // Guardar referencia al número del jugador para raycaster click
+    sprite.userData.esJugadorCard = true
+    sprite.userData.jugadorNumero = jugador.numero
     grupo.add(sprite)
 
     // Sprite nombre
@@ -272,7 +346,7 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
     const spriteNom  = new THREE.Sprite(matNom)
     spriteNom.scale.set(escala, escala * aspect, 1)
     spriteNom.position.set(jugador.x, offsetY, jugador.z)
-    spriteNom.renderOrder = 50 + idx * 3 + 1
+    spriteNom.renderOrder = 50 + idx * 4 + 1
     spriteNom.layers.set(0)
     spriteNom.visible = false
     grupo.add(spriteNom)
@@ -284,10 +358,23 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
     const spriteFoto = new THREE.Sprite(matFoto)
     spriteFoto.scale.set(escala, escala * aspect, 1)
     spriteFoto.position.set(jugador.x, offsetY, jugador.z)
-    spriteFoto.renderOrder = 50 + idx * 3 + 2
+    spriteFoto.renderOrder = 50 + idx * 4 + 2
     spriteFoto.layers.set(0)
     spriteFoto.visible = false
     grupo.add(spriteFoto)
+
+    // ── Sprite corners — solo visible cuando el jugador está seleccionado ──
+    const texCorners = new THREE.CanvasTexture(corNersCanvasShared)
+    const matCorners = crearMat(0)            // opacidad 0 al inicio (oculto)
+    matCorners.map   = texCorners
+    const spriteCorners = new THREE.Sprite(matCorners)
+    // Empieza con escala ligeramente más grande para el efecto pop al seleccionar
+    spriteCorners.scale.set(escala * 1.15, escala * aspect * 1.15, 1)
+    spriteCorners.position.set(jugador.x, offsetY, jugador.z)
+    spriteCorners.renderOrder = 50 + idx * 4 + 3   // por encima del resto
+    spriteCorners.layers.set(0)
+    spriteCorners.visible = false
+    grupo.add(spriteCorners)
 
     // Redibujar solo el sprite principal (estructura + foto si está lista)
     function redibujar(mostrarFoto) {
@@ -307,14 +394,83 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
     img.onerror = () => {}
     img.src = jugador.foto
 
-    tarjetas.push({ sprite, spriteNom, spriteFoto, redibujar, jugador })
+    tarjetas.push({
+      sprite, spriteNom, spriteFoto, spriteCorners,
+      redibujar, jugador,
+    })
   })
+
+  // ── Selección: muestra las esquinas para informar que has seleccionado un jugador, oculta los demás ────────
+  function seleccionar(numero) {
+    if (numero == null) {
+      deseleccionar()
+      return
+    }
+    seleccionadoActual = numero
+    tarjetas.forEach(({ spriteCorners, jugador }) => {
+      if (jugador.numero === numero) {
+        spriteCorners.visible = true
+        // Mata cualquier tween previo en este sprite
+        gsap.killTweensOf(spriteCorners.material)
+        gsap.killTweensOf(spriteCorners.scale)
+        // Anima: opacity 0→1 + scale 1.15→1.0 (efecto "pop in")
+        const aspect = CH / CW
+        gsap.to(spriteCorners.material, {
+          opacity: 1,
+          duration: 0.35,
+          ease: 'power2.out',
+        })
+        gsap.to(spriteCorners.scale, {
+          x: escala,
+          y: escala * aspect,
+          duration: 0.45,
+          ease: 'back.out(2)',
+        })
+      } else {
+        // Animar salida de cualquier otro que estuviera seleccionado
+        if (spriteCorners.material.opacity > 0) {
+          ocultarCorners(spriteCorners)
+        }
+      }
+    })
+  }
+
+  function deseleccionar() {
+    seleccionadoActual = null
+    tarjetas.forEach(({ spriteCorners }) => {
+      if (spriteCorners.material.opacity > 0 || spriteCorners.visible) {
+        ocultarCorners(spriteCorners)
+      }
+    })
+  }
+
+  function ocultarCorners(spriteCorners) {
+    gsap.killTweensOf(spriteCorners.material)
+    gsap.killTweensOf(spriteCorners.scale)
+    const aspect = CH / CW
+    gsap.to(spriteCorners.material, {
+      opacity: 0,
+      duration: 0.25,
+      ease: 'power2.in',
+      onComplete: () => { spriteCorners.visible = false },
+    })
+    gsap.to(spriteCorners.scale, {
+      x: escala * 1.15,
+      y: escala * aspect * 1.15,
+      duration: 0.25,
+      ease: 'power2.in',
+    })
+  }
+
+  function getSeleccionado() {
+    return seleccionadoActual
+  }
 
   // ── Animación de entrada — 3 fases ────────────────────────────────────────
   function animarEntrada() {
     grupo.visible = true
 
-    tarjetas.forEach(({ sprite, spriteNom, spriteFoto, redibujar }, i) => {
+    tarjetas.forEach(({ sprite, spriteNom, spriteFoto, spriteCorners, redibujar }, i) => {
       const delay = i * 0.08
 
       // Reset — posición bajo la cancha, el clipPlane los oculta
@@ -324,6 +480,7 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
       sprite.position.y     = -8
       spriteFoto.position.y = -8
       spriteNom.position.y  = -8
+      spriteCorners.position.y = -8
       sprite.material.opacity    = 1
       spriteFoto.material.opacity = 1
       spriteNom.material.opacity = 0
@@ -333,6 +490,7 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
       gsap.to(sprite.position,    { y: offsetY, duration: 0.7, delay, ease: 'power3.out' })
       gsap.to(spriteFoto.position,{ y: offsetY, duration: 0.7, delay, ease: 'power3.out' })
       gsap.to(spriteNom.position, { y: offsetY, duration: 0.7, delay, ease: 'power3.out' })
+      gsap.to(spriteCorners.position, { y: offsetY, duration: 0.7, delay, ease: 'power3.out' })
 
       // Fase 2 — nombre hace fade in (0.3s después)
       gsap.delayedCall(delay + 0.3, () => {
@@ -343,18 +501,19 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
 
   // ── Animación de salida ───────────────────────────────────────────────────
   function animarSalida(onComplete) {
-    tarjetas.forEach(({ sprite, spriteNom, spriteFoto }, i) => {
+    tarjetas.forEach(({ sprite, spriteNom, spriteFoto, spriteCorners }, i) => {
       const delay = i * 0.03
       gsap.to(sprite.position,    { y: -8, duration: 0.45, delay, ease: 'power2.in' })
       gsap.to(spriteFoto.position,{ y: -8, duration: 0.45, delay, ease: 'power2.in' })
       gsap.to(spriteNom.position, { y: -8, duration: 0.45, delay, ease: 'power2.in' })
+      gsap.to(spriteCorners.position, { y: -8, duration: 0.45, delay, ease: 'power2.in' })
       gsap.to(spriteNom.material, { opacity: 0, duration: 0.25, delay, ease: 'power2.in' })
     })
 
     const duracionTotal = tarjetas.length * 0.03 + 0.5
     gsap.delayedCall(duracionTotal, () => {
       grupo.visible = false
-      tarjetas.forEach(({ sprite, spriteNom, spriteFoto, redibujar, jugador }) => {
+      tarjetas.forEach(({ sprite, spriteNom, spriteFoto, spriteCorners, redibujar, jugador }) => {
         sprite.position.set(jugador.x, -8, jugador.z)
         sprite.material.opacity = 1
         sprite.visible = true
@@ -364,8 +523,12 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
         spriteFoto.position.set(jugador.x, -8, jugador.z)
         spriteFoto.material.opacity = 1
         spriteFoto.visible = true
+        spriteCorners.position.set(jugador.x, -8, jugador.z)
+        spriteCorners.material.opacity = 0
+        spriteCorners.visible = false
         redibujar(false)
       })
+      seleccionadoActual = null
       if (onComplete) onComplete()
     })
   }
@@ -382,9 +545,10 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
         return db - da
       })
       .forEach((t, i) => {
-        t.sprite.renderOrder     = 50 + i * 3
-        t.spriteNom.renderOrder  = 50 + i * 3 + 1
-        t.spriteFoto.renderOrder = 50 + i * 3 + 2
+        t.sprite.renderOrder        = 50 + i * 4
+        t.spriteNom.renderOrder     = 50 + i * 4 + 1
+        t.spriteFoto.renderOrder    = 50 + i * 4 + 2
+        t.spriteCorners.renderOrder = 50 + i * 4 + 3
       })
   }
 
@@ -402,5 +566,8 @@ export function createJugadorCards(scene, jugadores = JUGADORES, opciones = {}) 
   })
   document.getElementById('cc-controls').appendChild(btn)
 
-  return { grupo, tarjetas, animarEntrada, animarSalida, tickJugadores }
+  return {
+    grupo, tarjetas, animarEntrada, animarSalida, tickJugadores,
+    seleccionar, deseleccionar, getSeleccionado,
+  }
 }

@@ -35,6 +35,7 @@ import { createSpiderChart3D }   from './cancha/spider-chart-3d.js'
 import { createHistoria }        from './cancha/historia.js'
 import { createHudTextInfo }     from './cancha/hud-text-info.js'
 import { createHudInsightCard }  from './cancha/hud-insight-card.js'
+import { createHudInsightHorizontal } from './cancha/hud-insight-horizontal.js'
 import { ScannerEffect }         from './cancha/scanner-effect.js'
 
 // ── Inicializar escena base ──
@@ -115,8 +116,46 @@ const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
 ])
 
 // ── Cards de jugadores ──
-const { grupo: grupoJugadores, tickJugadores } = createJugadorCards(scene, JUGADORES, {
+const {
+  grupo: grupoJugadores,
+  tickJugadores,
+  seleccionar: seleccionarJugador,
+  deseleccionar: deseleccionarJugador,
+} = createJugadorCards(scene, JUGADORES, {
   escala: 17, offsetY: 8.0,
+})
+
+// ── Click sobre jugador → seleccionarlo (deselecciona los demás) ───────────
+// Si clickea fuera de cualquier jugador, deselecciona todo.
+const _raycaster = new THREE.Raycaster()
+const _mouse = new THREE.Vector2()
+renderer.domElement.addEventListener('click', (event) => {
+  if (!grupoJugadores.visible) return  // solo cuando las cards están activas
+
+  // Normalizar coordenadas del mouse a NDC (-1 a +1)
+  const rect = renderer.domElement.getBoundingClientRect()
+  _mouse.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1
+  _mouse.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1
+
+  _raycaster.setFromCamera(_mouse, camera)
+
+  // Recolectar todos los sprites de jugador-card del grupo
+  const candidatos = []
+  grupoJugadores.traverse(obj => {
+    if (obj.userData && obj.userData.esJugadorCard && obj.visible) {
+      candidatos.push(obj)
+    }
+  })
+
+  const intersects = _raycaster.intersectObjects(candidatos, false)
+  if (intersects.length > 0) {
+    // Hay hit → seleccionar el primero (más cercano)
+    const numero = intersects[0].object.userData.jugadorNumero
+    seleccionarJugador(numero)
+  } else {
+    // Click fuera de cualquier jugador → deseleccionar
+    deseleccionarJugador()
+  }
 })
 
 // ── Card de equipo ──
@@ -374,6 +413,34 @@ btnInsight.onclick = () => {
 }
 document.querySelector('#cc-controls')?.appendChild(btnInsight)
 
+// ── HUD Insight Horizontal ──
+const insightHorizontal = createHudInsightHorizontal({
+  scene,
+  camera,
+  anchor3D: { x: -20, y: 0, z: 0 },   // punto 3D a la izquierda del card
+  valor: 3,
+  unidad: 'Segundos',
+  maxValor: 10,                        // 3/10 = 30% del ring
+  titulo: 'Tras recuperación',
+  secuencia: ['recuperación', 'centro'],
+  color: '#00f0ff',
+  offsetX: 180,
+  offsetY: 0,
+  countUp: true,
+  countDuration: 1.2,
+})
+
+const btnInsightH = document.createElement('button')
+btnInsightH.className = 'btn'
+btnInsightH.textContent = 'Insight Horizontal'
+let insightHVisible = false
+btnInsightH.onclick = () => {
+  insightHVisible = !insightHVisible
+  if (insightHVisible) insightHorizontal.show()
+  else insightHorizontal.hide()
+}
+document.querySelector('#cc-controls')?.appendChild(btnInsightH)
+
 // ── Selective Bloom ──
 const bloomLayer   = new THREE.Layers()
 bloomLayer.set(BLOOM_LAYER)
@@ -476,6 +543,7 @@ function animate() {
   tickSpiderChart(camera)
   scanner.update(dt)
   insightCard.tick()
+  insightHorizontal.tick()
 
   scene.traverse(child => {
     if (child.userData.esFicha === true) child.lookAt(camera.position)
