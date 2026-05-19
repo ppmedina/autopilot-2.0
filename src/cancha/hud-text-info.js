@@ -49,7 +49,7 @@ export function createHudTextInfo({
   offsetY = 40,
   offsetX = 40,
   glitchIntensity = 1.0,
-  revealSpeed = 1.0,
+  revealSpeed = 1.4,
   flickerAmount = 0.5,
   glowStrength = 1.0,
   fontSizeLabel = '18px',
@@ -77,7 +77,7 @@ export function createHudTextInfo({
         align-items: center;
         gap: 0.6em;
         padding: 0.55em 1.4em 0.55em 1em;
-        border: 1.5px solid var(--hti-color);
+        border: 1.2px solid var(--hti-color);
         border-radius: 999px;
         background: rgba(0, 12, 20, 0.55);
         backdrop-filter: blur(6px);
@@ -206,7 +206,7 @@ export function createHudTextInfo({
 
   // CSS variables locales (no contaminan globalmente)
   el.style.setProperty('--hti-color', color)
-  el.style.setProperty('--hti-glow-outer', hexToRgba(color, 0.6 * glowStrength))
+  el.style.setProperty('--hti-glow-outer', hexToRgba(color, 0.3 * glowStrength))
   el.style.setProperty('--hti-glow-inner', hexToRgba(color, 0.3 * glowStrength))
   el.style.setProperty('--hti-label-color', finalLabelColor)
   el.style.setProperty('--hti-value-color', valueColor)

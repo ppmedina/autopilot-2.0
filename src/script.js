@@ -34,6 +34,7 @@ import { createVentanaChart3D }  from './cancha/ventana-chart-3d.js'
 import { createSpiderChart3D }   from './cancha/spider-chart-3d.js'
 import { createHistoria }        from './cancha/historia.js'
 import { createHudTextInfo }     from './cancha/hud-text-info.js'
+import { createHudInsightCard }  from './cancha/hud-insight-card.js'
 import { ScannerEffect }         from './cancha/scanner-effect.js'
 
 // ── Inicializar escena base ──
@@ -346,6 +347,33 @@ btnTextInfo.onclick = () => {
 }
 document.querySelector('#cc-controls')?.appendChild(btnTextInfo)
 
+// ── HUD Insight Card ──
+const insightCard = createHudInsightCard({
+  scene,
+  camera,
+  anchor3D: { x: 30, y: 0, z: -15 },   // ajusta a un punto real de tu cancha
+  valor: 73,
+  sufijo: '%',
+  etiqueta: 'centros por derecha',
+  color: '#00f0ff',
+  width: 227.65,
+  height: 196.11,
+  offsetY: 320,
+  countUp: true,
+  countDuration: 1.2,
+})
+
+const btnInsight = document.createElement('button')
+btnInsight.className = 'btn'
+btnInsight.textContent = 'Insight Card'
+let insightVisible = false
+btnInsight.onclick = () => {
+  insightVisible = !insightVisible
+  if (insightVisible) insightCard.show()
+  else insightCard.hide()
+}
+document.querySelector('#cc-controls')?.appendChild(btnInsight)
+
 // ── Selective Bloom ──
 const bloomLayer   = new THREE.Layers()
 bloomLayer.set(BLOOM_LAYER)
@@ -447,6 +475,7 @@ function animate() {
   tickEventos(camera)
   tickSpiderChart(camera)
   scanner.update(dt)
+  insightCard.tick()
 
   scene.traverse(child => {
     if (child.userData.esFicha === true) child.lookAt(camera.position)
