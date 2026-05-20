@@ -36,6 +36,8 @@ import { createHistoria }        from './cancha/historia.js'
 import { createHudTextInfo }     from './cancha/hud-text-info.js'
 import { createHudInsightCard }  from './cancha/hud-insight-card.js'
 import { createHudInsightHorizontal } from './cancha/hud-insight-horizontal.js'
+import { createHudInsightChart }      from './cancha/hud-insight-chart.js'
+import { createHudInsightRange }      from './cancha/hud-insight-range.js'
 import { ScannerEffect }         from './cancha/scanner-effect.js'
 
 // ── Inicializar escena base ──
@@ -441,6 +443,71 @@ btnInsightH.onclick = () => {
 }
 document.querySelector('#cc-controls')?.appendChild(btnInsightH)
 
+// ── HUD Insight Chart ──
+const insightChart = createHudInsightChart({
+  scene,
+  camera,
+  anchor3D: { x: -12, y: 0, z: 6 },   // posición de J. Dos Santos en la cancha
+  valor: 121,
+  etiqueta: 'finalizaciones',
+  serie: [
+    { label: 'J1', valor: 12 },
+    { label: 'J2', valor: 28 },
+    { label: 'J3', valor: 35 },
+    { label: 'J4', valor: 121 },
+  ],
+  destacado: { indice: 2.65, label: '+80%' },
+  color: '#00f0ff',
+  offsetX: 90,         // separación horizontal fija (px)
+  offsetY: 0,          // card alineado verticalmente con el conector
+  // Modo "píxeles fijos": anchorRadius3D = 0 desactiva el modo proporcional,
+  // así anchorOffsetX/Y se interpretan como PÍXELES literales.
+  // El conector siempre tendrá la misma forma en pantalla, sin importar la vista.
+  anchorRadius3D: 0,
+  anchorOffsetX: 0,    // sin desplazamiento horizontal (sale del centro proyectado)
+  anchorOffsetY: -15,  // 15px arriba para compensar centro-círculo vs centro-sprite
+  countDuration: 1.2,
+  chartDuration: 1.6,
+})
+
+const btnInsightChart = document.createElement('button')
+btnInsightChart.className = 'btn'
+btnInsightChart.textContent = 'Insight Chart'
+let insightChartVisible = false
+btnInsightChart.onclick = () => {
+  insightChartVisible = !insightChartVisible
+  if (insightChartVisible) insightChart.show()
+  else insightChart.hide()
+}
+document.querySelector('#cc-controls')?.appendChild(btnInsightChart)
+
+// ── HUD Insight Range ──
+const insightRange = createHudInsightRange({
+  scene,
+  camera,
+  anchor3D: { x: -12, y: 0, z: 6 },   // posición de J. Dos Santos (mismo que chart)
+  rangoMin: 45,
+  rangoMax: 60,
+  unidad: 'Minutos',
+  titulo: 'Segunda parte',
+  badge: 'pico de actividad',
+  color: '#00f0ff',
+  offsetX: 90,
+  offsetY: 0,
+  countDuration: 0.7,
+})
+
+const btnInsightRange = document.createElement('button')
+btnInsightRange.className = 'btn'
+btnInsightRange.textContent = 'Insight Range'
+let insightRangeVisible = false
+btnInsightRange.onclick = () => {
+  insightRangeVisible = !insightRangeVisible
+  if (insightRangeVisible) insightRange.show()
+  else insightRange.hide()
+}
+document.querySelector('#cc-controls')?.appendChild(btnInsightRange)
+
 // ── Selective Bloom ──
 const bloomLayer   = new THREE.Layers()
 bloomLayer.set(BLOOM_LAYER)
@@ -544,6 +611,8 @@ function animate() {
   scanner.update(dt)
   insightCard.tick()
   insightHorizontal.tick()
+  insightChart.tick()
+  insightRange.tick()
 
   scene.traverse(child => {
     if (child.userData.esFicha === true) child.lookAt(camera.position)

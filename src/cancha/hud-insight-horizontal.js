@@ -90,10 +90,25 @@ export function createHudInsightHorizontal({
           -webkit-backdrop-filter 0.45s ease-out;
       }
       .hud-insight-h__card--filled {
-        background: rgba(5, 8, 14, 0.55);
+        background: rgba(5, 8, 14, 0.75);
         box-shadow: 0px 10.1834px 40.7337px rgba(3, 2, 4, 0.37);
         backdrop-filter: blur(15px);
         -webkit-backdrop-filter: blur(15px);
+      }
+
+      /* Glow decorativo en esquina superior derecha (mismo del insight-card vertical) */
+      .hud-insight-h__glow {
+        position: absolute;
+        width: 162.93px;
+        height: 162.93px;
+        right: -50.63px;
+        top: -49.64px;
+        background: rgba(37, 159, 235, 0.1);
+        filter: blur(25.4585px);
+        border-radius: 50%;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0;
       }
 
       /* SVG con el borde animado */
@@ -295,6 +310,11 @@ export function createHudInsightHorizontal({
   // El atributo 'd' se setea dinámicamente en setupBorderSvg()
   borderSvg.appendChild(borderPath)
   cardEl.appendChild(borderSvg)
+
+  // Glow decorativo (esquina superior derecha)
+  const glowEl = document.createElement('div')
+  glowEl.className = 'hud-insight-h__glow'
+  cardEl.appendChild(glowEl)
 
   // Ring (lado izquierdo).
   // El wrap mantiene el tamaño visual del ring (ringSize) para que el layout
@@ -641,6 +661,7 @@ export function createHudInsightHorizontal({
     gsap.set(borderPath,     { strokeDashoffset: state.borderPerimeter })
     gsap.set(ringProgress,   { strokeDashoffset: state.ringCircumference })
     gsap.set(ringTrack,      { opacity: 0 })
+    gsap.set(glowEl,         { opacity: 0 })
     // El grupo de ticks como un todo arranca oculto; los hijos arrancan con
     // scale:0.5 para el efecto pop. La opacidad final del grupo es 1 (los
     // ticks individuales mantienen su 0.2 de CSS).
@@ -702,6 +723,13 @@ export function createHudInsightHorizontal({
     tl.add(() => {
       cardEl.classList.add('hud-insight-h__card--filled')
     }, fillStart)
+
+    // [fillStart + 0.05s] Aparece el glow decorativo (esquina superior derecha)
+    tl.to(glowEl, {
+      opacity: 1,
+      duration: 0.5,
+      ease: 'power2.out',
+    }, fillStart + 0.05)
 
     // [fillStart + 0.10s] Las 5 marcas radiales aparecen en sincronía con el
     // ring del loader: el grupo entero se hace visible con un fade, y los
@@ -816,6 +844,13 @@ export function createHudInsightHorizontal({
       ease: 'power2.in',
     }, 0)
 
+    // [0.00s] Glow decorativo se desvanece
+    tl.to(glowEl, {
+      opacity: 0,
+      duration: 0.25,
+      ease: 'power2.in',
+    }, 0)
+
     // [0.10s] Unidad + número desaparecen
     tl.to([unitEl, numberEl], {
       opacity: 0,
@@ -864,14 +899,15 @@ export function createHudInsightHorizontal({
       cardEl.classList.remove('hud-insight-h__card--filled')
     }, 0.55)
 
-    // [1.00s] Borde se desdibuja completo (sin solape con lo siguiente)
+    // [1.00s] Borde se desdibuja COMPLETO antes de tocar el connector
+    //         Duración 0.55s → termina en 1.55s
     tl.to(borderPath, {
       strokeDashoffset: state.borderPerimeter,
       duration: 0.55,
       ease: 'power2.inOut',
     }, 1.00)
 
-    // [1.60s] Línea conectora se retrae (después del borde)
+    // [1.60s] Línea conectora se retrae (después del borde, sin solape)
     tl.to(connectorEl, {
       opacity: 0,
       scaleX: 0,
@@ -946,7 +982,7 @@ export function createHudInsightHorizontal({
     gsap.killTweensOf([
       el, cardEl, connectorEl, connectorDotEl,
       borderPath, ringProgress, ringTrack, ringContentEl,
-      numberEl, unitEl, titleEl, sequenceEl,
+      numberEl, unitEl, titleEl, sequenceEl, glowEl,
       ticksGroup, ...ticksGroup.children,
     ])
     if (el.parentNode) el.parentNode.removeChild(el)
