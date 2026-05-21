@@ -42,6 +42,7 @@ export function createGrid(scene, offsetY = 0.35, offsetZ = 0) {
 
   const { divX, divZ } = configs[params.grid]
   const gridMesh = new THREE.LineSegments(crearGeometria(divX, divZ), mat)
+  gridMesh.name = 'cancha-grid'
   gridMesh.position.y = offsetY
   gridMesh.position.z = offsetZ
   scene.add(gridMesh)

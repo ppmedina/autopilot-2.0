@@ -26,6 +26,10 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
     escala   = 10.0,
     posicion = { x: 0, y: -5, z: 0 },
     rotacion = { x: 0, y: 0, z: 0 },
+    // Callback opcional que se dispara cuando la cancha está totalmente
+    // cargada y añadida a la escena. Recibe (gltfScene, escalaFinal) para
+    // permitir animaciones de intro u otras manipulaciones desde el caller.
+    onReady  = null,
   } = opciones
 
   const bgTexture = new THREE.TextureLoader().load('/estadio.png', (tex) => {
@@ -161,6 +165,13 @@ export function createField(scene, ruta = '/cancha.glb', opciones = {}) {
         gltf.scene.rotation.set(rotacion.x, rotacion.y, rotacion.z)
 
         scene.add(gltf.scene)
+
+        // ── Avisar al caller que la cancha ya está lista ──────────────────
+        // Pasamos también la escala final para que sepan a qué tamaño debe
+        // quedar (útil para animaciones de intro tipo escalado).
+        if (typeof onReady === 'function') {
+          onReady(gltf.scene, escala)
+        }
       },
       (progress) => {
         const pct = (progress.loaded / progress.total * 100).toFixed(1)

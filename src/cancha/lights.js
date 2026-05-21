@@ -71,8 +71,14 @@ export function createLights(scene) {
   })
 
   const sombraPlano = new THREE.Mesh(geo, mat)
+  sombraPlano.name = 'cancha-resplandor'
   sombraPlano.rotation.x = -Math.PI / 2
   sombraPlano.position.y = -15
   sombraPlano.position.z = 10
   scene.add(sombraPlano)
+
+  // Retornar el resplandor para que se pueda animar/ocultar desde el caller.
+  // Las luces ambientes/foci/spot no se retornan porque no necesitan animación
+  // de intro (son parte del ambiente "estable" del estadio).
+  return { sombraPlano }
 }

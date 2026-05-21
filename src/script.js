@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import gsap from 'gsap'
 import { createScene }     from './cancha/scene.js'
 import { createLights }    from './cancha/lights.js'
 import { createField, CANCHA_BLOOM_LAYER } from './cancha/field-02.js'
@@ -43,12 +44,104 @@ import { ScannerEffect }         from './cancha/scanner-effect.js'
 // ── Inicializar escena base ──
 const { scene, camera, renderer } = createScene()
 
-createLights(scene)
+// ── Fade general de negro a transparente al cargar la intro ──
+// Overlay HTML por encima del canvas que cubre toda la pantalla. Empieza
+// completamente opaco (negro puro) y se desvanece junto con el bouncing
+// cuando el GLB de la cancha termina de cargar. Así el usuario nunca ve
+// el estado intermedio de "estadio vacío + cargando".
+const fadeOverlay = document.createElement('div')
+fadeOverlay.style.cssText = `
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 99999;
+  pointer-events: none;
+  opacity: 1;
+`
+document.body.appendChild(fadeOverlay)
 
-const { fieldMaterial, bgTexture } = createField(scene)
-const { allLines, setLinesColor }  = createLines(scene)
-createGoals(scene)
-createGrid(scene, 0.35, 0)
+const { sombraPlano } = createLights(scene)
+
+const { fieldMaterial, bgTexture } = createField(scene, '/cancha.glb', {
+  // Animación de intro: la cancha + líneas + grid + porterías + resplandor
+  // aparecen al 60% y crecen al 100% con un bouncing muy suave (back.out(1.4)).
+  // Las 5 cosas se animan SIMULTÁNEAMENTE para que se sientan como una sola
+  // pieza unificada.
+  //
+  // Las líneas/grid/porterías/resplandor permanecen OCULTAS hasta que el GLB
+  // termine de cargar (visible = false desde el inicio). Así evitamos que
+  // aparezcan "flotando" en el estadio antes de que la cancha esté lista. En
+  // el onReady las hacemos visibles justo antes de arrancar el bouncing.
+  onReady: (canchaScene, escalaFinal) => {
+    canchaScene.scale.setScalar(escalaFinal * 0.60)
+
+    // Hacer visibles las líneas/grid/porterías/resplandor ahora que la cancha cargó
+    linesGroup.visible   = true
+    gridMesh.visible     = true
+    goalsGroup.visible   = true
+    sombraPlano.visible  = true
+
+    const tl = gsap.timeline()
+    // Cancha: escala de 0.60×escalaFinal → escalaFinal
+    tl.to(canchaScene.scale, {
+      x: escalaFinal, y: escalaFinal, z: escalaFinal,
+      duration: 1.2,
+      ease: 'back.out(1.4)',
+    }, 0)
+    // Líneas: escala de 0.60 → 1.0 (valor "normal" del grupo)
+    tl.to(linesGroup.scale, {
+      x: 1, y: 1, z: 1,
+      duration: 1.2,
+      ease: 'back.out(1.4)',
+    }, 0)
+    // Grid: escala de 0.60 → 1.0 (igual que las líneas)
+    tl.to(gridMesh.scale, {
+      x: 1, y: 1, z: 1,
+      duration: 1.2,
+      ease: 'back.out(1.4)',
+    }, 0)
+    // Porterías: escala de 0.60 → 1.0
+    tl.to(goalsGroup.scale, {
+      x: 1, y: 1, z: 1,
+      duration: 1.2,
+      ease: 'back.out(1.4)',
+    }, 0)
+    // Resplandor azul de la cancha: escala de 0.60 → 1.0
+    tl.to(sombraPlano.scale, {
+      x: 1, y: 1, z: 1,
+      duration: 1.2,
+      ease: 'back.out(1.4)',
+    }, 0)
+    // Fade general del overlay negro: de opacity 1 → 0 con duración MÁS CORTA
+    // que el bouncing (0.6s vs 1.2s), para que el negro desaparezca a la mitad
+    // del bouncing y el usuario pueda ver los últimos ~600ms de la animación
+    // (el "asentamiento" del overshoot) sin el velo negro encima.
+    tl.to(fadeOverlay, {
+      opacity: 0,
+      duration: 0.6,
+      ease: 'power2.out',
+      onComplete: () => {
+        fadeOverlay.remove()
+      },
+    }, 0)
+  },
+})
+const { allLines, linesGroup, setLinesColor }  = createLines(scene)
+const goalsGroup = createGoals(scene)
+const gridMesh = createGrid(scene, 0.35, 0)
+
+// Setear la escala inicial al 60% Y ocultar los grupos INMEDIATAMENTE, antes
+// de que se rendericen. Permanecen ocultos hasta que el GLB de la cancha
+// cargue (se hacen visibles en el onReady justo antes del bouncing). Así
+// el usuario no ve líneas/porterías/resplandor flotando en el estadio sin cancha.
+linesGroup.scale.setScalar(0.60)
+gridMesh.scale.setScalar(0.60)
+goalsGroup.scale.setScalar(0.60)
+sombraPlano.scale.setScalar(0.60)
+linesGroup.visible   = false
+gridMesh.visible     = false
+goalsGroup.visible   = false
+sombraPlano.visible  = false
 
 // ── Heatmap 3D ──
 const { meshGrid: heatmapGrid, meshSolid: heatmapSolid } = createHeatmap(scene)

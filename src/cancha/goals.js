@@ -13,6 +13,14 @@ export function createGoals(scene) {
   const H = 2.44   // altura
   const W = 7.32   // ancho
 
+  // Grupo contenedor para ambas porterías. Igual que con las líneas, agrupar
+  // permite escalar/animar las dos porterías a la vez desde el origen del
+  // campo (0,0,0) con una sola operación, manteniendo la coherencia visual
+  // con la cancha y las líneas.
+  const goalsGroup = new THREE.Group()
+  goalsGroup.name = 'cancha-goals'
+  scene.add(goalsGroup)
+
   function buildGoal(x) {
     const parts = [
       { geo: new THREE.CylinderGeometry(R, R, H, 8), pos: [x, H / 2, -W / 2], rot: null },
@@ -29,10 +37,12 @@ export function createGoals(scene) {
       m.position.set(...pos)
       if (rot) m.rotation.copy(rot)
       m.castShadow = true
-      scene.add(m)
+      goalsGroup.add(m)
     })
   }
 
   buildGoal(-52.5)
   buildGoal( 52.5)
+
+  return goalsGroup
 }

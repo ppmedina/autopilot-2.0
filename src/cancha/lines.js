@@ -6,6 +6,15 @@ export function createLines(scene, offsetY = 0.35) {
   const Y = 0.02
   const T = 0.12
 
+  // Grupo contenedor para todas las líneas. Añadir las líneas a este grupo
+  // en lugar de directamente a la escena permite escalar/animar TODAS a la
+  // vez desde el origen del campo (0,0,0) con una sola operación. Si se
+  // animara cada línea individualmente con su propio scale, cada una se
+  // escalaría desde su propio centro y el efecto visual sería incorrecto.
+  const linesGroup = new THREE.Group()
+  linesGroup.name = 'cancha-lines'
+  scene.add(linesGroup)
+
   function makeMat() {
     return new THREE.MeshStandardMaterial({
       color:             0xffffff,
@@ -25,7 +34,7 @@ export function createLines(scene, offsetY = 0.35) {
     m.rotation.x = -Math.PI / 2
     m.rotation.z = -angle
     m.position.set((x1 + x2) / 2, Y, (z1 + z2) / 2)
-    scene.add(m); allLines.push(m)
+    linesGroup.add(m); allLines.push(m)
   }
 
   function addRect(x1, z1, x2, z2) {
@@ -52,7 +61,7 @@ export function createLines(scene, offsetY = 0.35) {
       makeMat()
     )
     m.position.y = Y
-    scene.add(m); allLines.push(m)
+    linesGroup.add(m); allLines.push(m)
   }
 
   function addCircle(cx, cz, radius) {
@@ -66,7 +75,7 @@ export function createLines(scene, offsetY = 0.35) {
     )
     m.rotation.x = -Math.PI / 2
     m.position.set(cx, Y, cz)
-    scene.add(m); allLines.push(m)
+    linesGroup.add(m); allLines.push(m)
   }
 
   // Bordes exteriores
@@ -120,5 +129,5 @@ export function createLines(scene, offsetY = 0.35) {
     })
   }
 
-  return { allLines, setLinesColor }
+  return { allLines, linesGroup, setLinesColor }
 }

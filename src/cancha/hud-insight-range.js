@@ -136,6 +136,23 @@ export function createHudInsightRange({
         stroke: rgba(0, 221, 255, 0.7);
         stroke-width: 1.4;
       }
+      /* Pulso de "energía" que recorre el borde. Es un path completo brillante
+         al que se le aplica una <mask> SVG con gradient radial móvil: la máscara
+         es una elipse difusa (blanca al centro, transparente en los bordes) que
+         se mueve por el path. Solo se ve la porción de trazo bajo la máscara. */
+      .hud-insight-r__border-pulse {
+        fill: none;
+        stroke: #00DDFF;
+        stroke-width: 2.0;
+        stroke-linecap: round;
+        opacity: 0;
+        filter:
+          drop-shadow(0 0 3px #00DDFF)
+          drop-shadow(0 0 8px #00DDFF)
+          drop-shadow(0 0 18px rgba(0, 221, 255, 0.7))
+          drop-shadow(0 0 32px rgba(0, 221, 255, 0.5));
+        pointer-events: none;
+      }
 
       /* Ring container (mismo del horizontal pero centrado en lugar de a la izquierda) */
       .hud-insight-r__ring-wrap {
@@ -299,6 +316,61 @@ export function createHudInsightRange({
   const borderPath = document.createElementNS(SVG_NS, 'path')
   borderPath.setAttribute('class', 'hud-insight-r__border-rect')
   borderSvg.appendChild(borderPath)
+
+  // Pulso de "energía" — un único path completo con stroke brillante, al que
+  // aplicamos una máscara SVG con gradient RADIAL móvil. La máscara es un
+  // círculo difuso (blanco al centro, transparente en los bordes) que se
+  // desplaza por las coordenadas del path usando getPointAtLength(). Resultado:
+  // solo se ve la porción del trazo que está bajo la máscara, con fade natural.
+  // Mucho más limpio que múltiples segmentos.
+
+  // Defs con la máscara
+  const borderDefs = document.createElementNS(SVG_NS, 'defs')
+  const pulseMaskId = `hud-insight-r-pulse-mask-${Math.random().toString(36).slice(2, 9)}`
+  const pulseMask = document.createElementNS(SVG_NS, 'mask')
+  pulseMask.setAttribute('id', pulseMaskId)
+  pulseMask.setAttribute('maskUnits', 'userSpaceOnUse')
+  // Gradient radial dentro de la máscara: blanco (visible) al centro, negro (invisible) afuera
+  const pulseMaskGrad = document.createElementNS(SVG_NS, 'radialGradient')
+  const maskGradId = `hud-insight-r-pulse-mask-grad-${Math.random().toString(36).slice(2, 9)}`
+  pulseMaskGrad.setAttribute('id', maskGradId)
+  pulseMaskGrad.setAttribute('cx', '50%')
+  pulseMaskGrad.setAttribute('cy', '50%')
+  pulseMaskGrad.setAttribute('r', '50%')
+  const mStop1 = document.createElementNS(SVG_NS, 'stop')
+  mStop1.setAttribute('offset', '0%')
+  mStop1.setAttribute('stop-color', 'white')
+  mStop1.setAttribute('stop-opacity', '1')
+  const mStop2 = document.createElementNS(SVG_NS, 'stop')
+  mStop2.setAttribute('offset', '50%')
+  mStop2.setAttribute('stop-color', 'white')
+  mStop2.setAttribute('stop-opacity', '0.6')
+  const mStop3 = document.createElementNS(SVG_NS, 'stop')
+  mStop3.setAttribute('offset', '100%')
+  mStop3.setAttribute('stop-color', 'white')
+  mStop3.setAttribute('stop-opacity', '0')
+  pulseMaskGrad.appendChild(mStop1)
+  pulseMaskGrad.appendChild(mStop2)
+  pulseMaskGrad.appendChild(mStop3)
+  borderDefs.appendChild(pulseMaskGrad)
+
+  // Elipse que actúa como la "linterna" móvil dentro de la máscara
+  const pulseMaskCircle = document.createElementNS(SVG_NS, 'ellipse')
+  pulseMaskCircle.setAttribute('cx', '0')
+  pulseMaskCircle.setAttribute('cy', '0')
+  pulseMaskCircle.setAttribute('rx', '0')
+  pulseMaskCircle.setAttribute('ry', '0')
+  pulseMaskCircle.setAttribute('fill', `url(#${maskGradId})`)
+  pulseMask.appendChild(pulseMaskCircle)
+  borderDefs.appendChild(pulseMask)
+  borderSvg.appendChild(borderDefs)
+
+  // Path del pulso (un solo elemento) — stroke continuo brillante, recortado
+  // por la máscara para que solo se vea donde está la "linterna".
+  const borderPulse = document.createElementNS(SVG_NS, 'path')
+  borderPulse.setAttribute('class', 'hud-insight-r__border-pulse')
+  borderPulse.setAttribute('mask', `url(#${pulseMaskId})`)
+  borderSvg.appendChild(borderPulse)
   cardEl.appendChild(borderSvg)
 
   // Glow decorativo
@@ -491,6 +563,7 @@ export function createHudInsightRange({
     visible: false,
     anchor3D: new THREE.Vector3(anchor3D.x, anchor3D.y, anchor3D.z),
     masterTimeline: null,
+    pulseTimeline: null,    // loop infinito del pulso del borde
     borderPerimeter: 0,
     ringCircumference,
     targetMin: Number(rangoMin) || 0,
@@ -582,10 +655,157 @@ export function createHudInsightRange({
     ].join(' ')
 
     borderPath.setAttribute('d', d)
+    borderPulse.setAttribute('d', d)
     const perim = borderPath.getTotalLength()
     state.borderPerimeter = perim
     borderPath.style.strokeDasharray  = `${perim}`
     borderPath.style.strokeDashoffset = `${perim}`
+  }
+
+  // ---------------------------------------------------------------------------
+  // 5b. Pulso del borde: porción brillante (controlada por una máscara radial
+  //     móvil) que recorre todo el perímetro con VELOCIDAD UNIFORME. Se repite
+  //     cada ~10 segundos.
+  // ---------------------------------------------------------------------------
+  function startBorderPulse() {
+    if (state.pulseTimeline) state.pulseTimeline.kill()
+    state._pulseStopped = false
+
+    const perim = state.borderPerimeter || 0
+    if (perim === 0) return
+
+    // Dimensiones BASE de la "linterna" elíptica. La hacemos alargada (rx > ry)
+    // para que actúe como una estela orientada en la dirección del movimiento.
+    // En cada frame: rx se mantiene cerca de este valor con pulsación leve, y
+    // el ángulo se calcula a partir de la tangente del path.
+    const baseRx = 55    // largo del haz (dirección del movimiento)
+    const baseRy = 35    // ancho del haz (perpendicular)
+
+    // Estado inicial de la máscara y del path
+    gsap.set(borderPulse, { opacity: 0 })
+    gsap.set(pulseMaskCircle, {
+      attr: { rx: baseRx, ry: baseRy, cx: -1000, cy: -1000 },
+    })
+
+    // Helper que dispara UN ciclo del pulso. Cada ciclo crea su propia
+    // timeline con valores levemente variados (microvariaciones), y al
+    // terminar llama recursivamente para el siguiente disparo.
+    const runOneCycle = () => {
+      if (state._pulseStopped) return
+
+      // ──── Microvariaciones aleatorias por ciclo ────────────────────────
+      // Cada vuelta tiene timing ligeramente distinto (±10%) para que no
+      // se sienta robótico. También variamos el delay entre disparos.
+      const r = () => 0.95 + Math.random() * 0.10   // factor 0.95..1.05
+      const runDuration   = 1.50 * r()             // ~1.42..1.58s
+      const fadeInDuration  = 0.30 * r()
+      const fadeOutDuration = 0.55                 // duración del fade-out
+      // Umbral: cuando progress.len/perim cruza este valor, dispara el fade-out.
+      // 0.85 = se empieza a apagar al entrar en la última recta vertical
+      // (después de la curva inf-izq, en la subida final hacia el inicio).
+      const fadeOutTriggerProgress = 0.85
+      const interCycleDelay = 8.5 * r()            // ~8.07..8.93s
+
+      const progress = { len: 0 }
+
+      const tl = gsap.timeline({
+        onComplete: () => {
+          progress.len = 0
+          pulseMaskCircle.setAttribute('cx', '-1000')
+          pulseMaskCircle.setAttribute('cy', '-1000')
+          // Programar el siguiente ciclo después de la pausa
+          gsap.delayedCall(interCycleDelay, runOneCycle)
+        },
+      })
+      state.pulseTimeline = tl
+
+      // Fade-in
+      tl.fromTo(borderPulse, {
+        opacity: 0,
+      }, {
+        opacity: 1,
+        duration: fadeInDuration,
+        ease: 'power2.out',
+      }, 0)
+
+      // ──── Recorrido UNIFORME ──────────────────────────────────────────
+      //
+      // Animamos directamente `progress.len` con easing 'none' para que
+      // la velocidad sea constante a lo largo de todo el perímetro. No
+      // hay modulación local — el haz avanza al mismo ritmo sin importar
+      // si está subiendo, en horizontal o bajando.
+
+      let fadeOutFired = false
+
+      tl.to(progress, {
+        len: perim,
+        duration: runDuration,
+        ease: 'none',
+        onUpdate: () => {
+          const len = Math.min(progress.len, perim - 0.01)
+
+          // Dispara el fade-out cuando entra en la ÚLTIMA recta vertical
+          // (después de la curva inf-izq, subiendo hacia el inicio).
+          if (!fadeOutFired && len / perim >= fadeOutTriggerProgress) {
+            fadeOutFired = true
+            gsap.to(borderPulse, {
+              opacity: 0,
+              duration: fadeOutDuration,
+              ease: 'power2.in',
+            })
+          }
+
+          // ──── Render ──────────────────────────────────────────────────
+          const pt = borderPath.getPointAtLength(len)
+          const ptAhead = borderPath.getPointAtLength(
+            (len + 1.5) % perim
+          )
+          const dx = ptAhead.x - pt.x
+          const dy = ptAhead.y - pt.y
+          const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI
+
+          // Pulsación sutil del tamaño (sine wave durante el recorrido)
+          const tlProgress = tl.progress()
+          const pulse = 1 + Math.sin(tlProgress * Math.PI * 6) * 0.08
+          const currentRx = baseRx * pulse
+          const currentRy = baseRy * pulse
+
+          pulseMaskCircle.setAttribute('cx', pt.x)
+          pulseMaskCircle.setAttribute('cy', pt.y)
+          pulseMaskCircle.setAttribute('rx', currentRx)
+          pulseMaskCircle.setAttribute('ry', currentRy)
+          pulseMaskCircle.setAttribute(
+            'transform',
+            `rotate(${angleDeg} ${pt.x} ${pt.y})`
+          )
+        },
+      }, 0)
+
+      // Reset al final del ciclo
+      tl.add(() => {
+        progress.len = 0
+        pulseMaskCircle.setAttribute('cx', '-1000')
+        pulseMaskCircle.setAttribute('cy', '-1000')
+      }, runDuration)
+    }
+
+    // Disparar el primer ciclo
+    runOneCycle()
+  }
+
+  function stopBorderPulse() {
+    state._pulseStopped = true
+    if (state.pulseTimeline) {
+      state.pulseTimeline.kill()
+      state.pulseTimeline = null
+    }
+    // Cancelar todos los delayedCall pendientes del próximo ciclo.
+    // (El flag _pulseStopped también previene que runOneCycle ejecute si
+    //  el delayedCall ya estaba en cola).
+    gsap.killTweensOf(state)
+    gsap.set(borderPulse, { opacity: 0 })
+    pulseMaskCircle.setAttribute('cx', '-1000')
+    pulseMaskCircle.setAttribute('cy', '-1000')
   }
 
   // ---------------------------------------------------------------------------
@@ -623,7 +843,12 @@ export function createHudInsightRange({
     gsap.set(badgeEl,        { opacity: 0, scale: 0.85 })
     gsap.set(glowEl,         { opacity: 0 })
 
-    const tl = gsap.timeline()
+    const tl = gsap.timeline({
+      onComplete: () => {
+        // Arrancar el loop del pulso brillante del borde cada ~3.5s
+        startBorderPulse()
+      },
+    })
     state.masterTimeline = tl
 
     // [0.00s] Connector dot
@@ -770,6 +995,7 @@ export function createHudInsightRange({
     state.visible = false
 
     if (state.masterTimeline) state.masterTimeline.kill()
+    stopBorderPulse()
 
     const tl = gsap.timeline({
       onComplete: () => {
@@ -930,9 +1156,11 @@ export function createHudInsightRange({
 
   function destroy() {
     if (state.masterTimeline) state.masterTimeline.kill()
+    if (state.pulseTimeline) state.pulseTimeline.kill()
     gsap.killTweensOf([
       el, cardEl, connectorEl, connectorDotEl,
-      borderPath, glowEl, ringProgress, ringTrack, ringContentEl,
+      borderPath, borderPulse,
+      glowEl, ringProgress, ringTrack, ringContentEl,
       unidadEl, rangoEl, rangoMinEl, rangoMaxEl,
       tituloEl, badgeEl,
       ticksGroup, ...ticksGroup.children,
