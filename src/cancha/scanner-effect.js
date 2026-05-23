@@ -5,6 +5,10 @@
  * - Malla hexagonal fina
  * - Avanza en Z (portería a portería)
  * - start() / stop() con animación de fade in/out
+ *
+ * NUEVO: scanOnce(callback) — ejecuta una sola pasada completa. Cuando el
+ * progress llega al loopEnd, en vez de reiniciar, llama deactivate() y al
+ * callback opcional. Útil para secuencias cinematográficas.
  */
 
 import * as THREE from 'three'
@@ -193,6 +197,16 @@ export class ScannerEffect {
     this._fadeTarget  = 0       // hacia dónde va el fade
     this._fadeSpeed   = 1 / this.params.fadeDuration
 
+    // ── NUEVO: modo single-pass para scanOnce() / scanNTimes() ───────────
+    // Cuando true, al llegar al final del recorrido el scanner cuenta una
+    // pasada completada. Si _passesCompleted < _passesTotal, sigue con la
+    // siguiente pasada. Si ya completó todas, se auto-desactiva y llama al
+    // callback _singlePassCallback.
+    this._singlePass         = false
+    this._singlePassCallback = null
+    this._passesTotal        = 0
+    this._passesCompleted    = 0
+
     this._group = new THREE.Group()
     this.scene.add(this._group)
 
@@ -302,14 +316,65 @@ export class ScannerEffect {
 
   // ── API pública ────────────────────────────────────────────────────────────
 
-  /** Activa el efecto con fade in */
+  /** Activa el efecto con fade in (modo loop infinito normal) */
   activate() {
     if (this._active) return
     this._active      = true
     this._running     = true
     this._fadeTarget  = 1
     this._progress    = -0.08
+    this._singlePass  = false      // forzar modo loop
+    this._singlePassCallback = null
     this._updateButtonStyle()
+  }
+
+  /**
+   * Ejecuta UNA SOLA pasada del scanner. Equivalente a scanNTimes(1, callback).
+   * Al llegar al final del recorrido, en vez de reiniciar el loop, se
+   * auto-desactiva (con fade-out) y llama al callback opcional.
+   *
+   * Retorna una Promise que resuelve cuando la pasada termina (después del
+   * fade-out completo). Útil para encadenar con await en secuencias.
+   *
+   * @param {Function} [callback] llamado al terminar la pasada (antes del fade-out)
+   * @returns {Promise<void>}
+   */
+  scanOnce(callback = null) {
+    return this.scanNTimes(1, callback)
+  }
+
+  /**
+   * Ejecuta N pasadas COMPLETAS del scanner antes de auto-desactivarse.
+   * Cada vez que el progress llega al final del recorrido, se cuenta una
+   * pasada completada. Cuando se alcanza N, se llama al callback y se
+   * dispara el fade-out automáticamente.
+   *
+   * Útil para secuencias narrativas donde se necesita un análisis "más
+   * profundo" (varias pasadas seguidas) en vez de una sola.
+   *
+   * @param {number}   numPasadas    cuántas veces debe recorrer la cancha (>= 1)
+   * @param {Function} [callback]    llamado al terminar la última pasada
+   * @returns {Promise<void>}        resuelve después del fade-out completo
+   */
+  scanNTimes(numPasadas, callback = null) {
+    // Si ya está corriendo, abortamos lo anterior y empezamos limpio
+    this._active             = true
+    this._running            = true
+    this._fadeTarget         = 1
+    this._progress           = -0.08
+    this._singlePass         = true        // reutilizamos el flag de single-pass
+    this._passesTotal        = Math.max(1, Math.floor(numPasadas))
+    this._passesCompleted    = 0
+    this._updateButtonStyle()
+
+    return new Promise(resolve => {
+      this._singlePassCallback = () => {
+        if (callback) callback()
+        // Esperar a que el fade-out termine antes de resolver la promesa
+        const fadeMs = this.params.fadeDuration * 1000 + 50
+        setTimeout(resolve, fadeMs)
+      }
+    })
   }
 
   /** Desactiva el efecto con fade out */
@@ -317,6 +382,10 @@ export class ScannerEffect {
     if (!this._active) return
     this._active     = false
     this._fadeTarget = 0
+    this._singlePass = false
+    this._singlePassCallback = null
+    this._passesTotal     = 0
+    this._passesCompleted = 0
     this._updateButtonStyle()
     // El avance se detiene cuando el fade llega a 0 (en update)
   }
@@ -355,10 +424,33 @@ export class ScannerEffect {
     // Avance del scanner
     if (this._running) {
       this._progress += delta * this.params.speed * this.params.direction
-      // Reinicia solo cuando la estela completa haya salido por el borde
       const loopEnd = 1.0 + this.params.trailLength + 0.05
-      if (this._progress > loopEnd) this._progress = -0.08
-      if (this._progress < -0.08)   this._progress = loopEnd
+
+      if (this._progress > loopEnd) {
+        // ── Modo SINGLE-PASS (N pasadas): contar y decidir si seguir ────
+        if (this._singlePass) {
+          this._passesCompleted++
+          if (this._passesCompleted >= this._passesTotal) {
+            // Ya completamos todas las pasadas pedidas → fade-out + callback
+            const cb = this._singlePassCallback
+            this._singlePassCallback = null
+            this._singlePass = false
+            this._passesTotal     = 0
+            this._passesCompleted = 0
+            if (cb) cb()
+            this._active     = false
+            this._fadeTarget = 0
+            this._updateButtonStyle()
+          } else {
+            // Aún faltan pasadas → reiniciar progress para la siguiente
+            this._progress = -0.08
+          }
+        } else {
+          // ── Modo LOOP infinito: reiniciar al principio ─────────────────
+          this._progress = -0.08
+        }
+      }
+      if (this._progress < -0.08) this._progress = loopEnd
     }
 
     // Pulso

@@ -57,6 +57,13 @@ export function createHudInsightRange({
   anchorOffsetX = 0,
   anchorOffsetY = 0,
   anchorRadius3D = 0,
+  // Offset DIRECTO en píxeles (no relativo al radio 3D). Útil para sprites
+  // billboard donde el tamaño en pantalla es independiente del ángulo de la
+  // cámara — un offset en píxeles fijos cae siempre en la misma posición
+  // relativa al sprite sin importar la vista (horizontal, top, diagonal, etc.).
+  // Positivo Y = ABAJO en pantalla; negativo Y = ARRIBA.
+  anchorOffsetPxX = 0,
+  anchorOffsetPxY = 0,
 
   // Animaciones
   countDuration = 0.7,        // duración de cada paso del count up del rango
@@ -552,9 +559,27 @@ export function createHudInsightRange({
   el.appendChild(connectorEl)
   container.appendChild(el)
 
-  // Estado inicial defensivo
+  // ─── Estado inicial defensivo: TODOS los elementos hijos invisibles ──────
+  // El contenedor padre `.hud-insight-r` está en opacity:0 por CSS, pero los
+  // elementos hijos (rangoEl, unidadEl, tituloEl, badgeEl, glowEl, ring*) NO
+  // tienen opacity definida en su CSS — arrancan con opacity:1 por defecto.
+  //
+  // Si por cualquier razón el padre se hace visible antes de que show() los
+  // resetee a su estado inicial, se vería un flash con el card completamente
+  // armado: "0-0 Minutos / Segunda parte / pico de actividad" + ring completo.
+  //
+  // Inicializamos TODO a estado invisible desde el momento de creación.
   gsap.set(connectorDotEl, { yPercent: -50, scale: 0 })
   gsap.set(connectorEl,    { yPercent: -50, opacity: 0, scaleX: 0 })
+  gsap.set(glowEl,         { opacity: 0 })
+  gsap.set(ringTrack,      { opacity: 0 })
+  gsap.set(ticksGroup,     { opacity: 0 })
+  gsap.set(ticksGroup.children, { scale: 0.5, transformOrigin: '50% 50%' })
+  gsap.set(ringContentEl,  { opacity: 0 })
+  gsap.set(unidadEl,       { opacity: 0, y: 4 })
+  gsap.set(rangoEl,        { opacity: 0 })
+  gsap.set(tituloEl,       { opacity: 0, y: 6 })
+  gsap.set(badgeEl,        { opacity: 0, scale: 0.85 })
 
   // ---------------------------------------------------------------------------
   // 3. Estado
@@ -601,8 +626,8 @@ export function createHudInsightRange({
       anchorRadiusPx = Math.abs(edgeScreenX - anchorScreenX)
     }
 
-    const screenX = anchorScreenX + anchorOffsetX * anchorRadiusPx
-    const screenY = anchorScreenY + anchorOffsetY * anchorRadiusPx
+    const screenX = anchorScreenX + anchorOffsetX * anchorRadiusPx + anchorOffsetPxX
+    const screenY = anchorScreenY + anchorOffsetY * anchorRadiusPx + anchorOffsetPxY
 
     const cardRect = cardEl.getBoundingClientRect()
     const cardHeightReal = cardRect.height
@@ -817,21 +842,23 @@ export function createHudInsightRange({
 
     if (state.masterTimeline) state.masterTimeline.kill()
 
-    el.style.opacity = '1'
-    updateProjection()
-
-    await new Promise(r => requestAnimationFrame(r))
-    setupBorderSvg()
-
+    // ─── PASO 1: Resetear estado visual ANTES de hacer el contenedor visible ──
+    // Si seteamos el contenedor a opacity=1 antes de resetear los elementos
+    // internos, hay un frame donde el navegador pinta el card con sus valores
+    // por defecto (rango "0-0", "Minutos", "Segunda parte", "pico de actividad",
+    // ring completo). Solo después gsap.set los reseteaba, pero ya era tarde —
+    // el usuario veía un flash del card completamente armado.
+    //
+    // Solución: dejar TODOS los elementos en su estado inicial ANTES de hacer
+    // visible el contenedor padre.
     cardEl.classList.remove('hud-insight-r__card--filled')
 
-    // Reset
+    // Reset de texto del rango (los valores se animarán desde 0)
     rangoMinEl.textContent = '0'
     rangoMaxEl.textContent = '0'
 
     gsap.set(connectorDotEl, { yPercent: -50, scale: 0 })
     gsap.set(connectorEl,    { yPercent: -50, opacity: 0, scaleX: 0 })
-    gsap.set(borderPath,     { strokeDashoffset: state.borderPerimeter })
     gsap.set(ringProgress,   { strokeDashoffset: state.ringCircumference })
     gsap.set(ringTrack,      { opacity: 0 })
     gsap.set(ticksGroup,     { opacity: 0 })
@@ -842,6 +869,18 @@ export function createHudInsightRange({
     gsap.set(tituloEl,       { opacity: 0, y: 6 })
     gsap.set(badgeEl,        { opacity: 0, scale: 0.85 })
     gsap.set(glowEl,         { opacity: 0 })
+
+    // ─── PASO 2: Ahora sí hacer el contenedor visible (todo dentro invisible) ─
+    el.style.opacity = '1'
+    updateProjection()
+
+    // ─── PASO 3: Esperar un frame para que el DOM se mida correctamente ──────
+    // (el setupBorderSvg necesita las dimensiones reales del card)
+    await new Promise(r => requestAnimationFrame(r))
+    setupBorderSvg()
+
+    // Setear el borde recién después de que setupBorderSvg calculó el perímetro
+    gsap.set(borderPath, { strokeDashoffset: state.borderPerimeter })
 
     const tl = gsap.timeline({
       onComplete: () => {

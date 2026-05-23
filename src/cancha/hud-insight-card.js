@@ -290,6 +290,23 @@ export function createHudInsightCard({
   el.appendChild(connectorEl)
   container.appendChild(el)
 
+  // ─── Estado inicial: TODOS los elementos hijos arrancan invisibles ───────
+  // Aunque el contenedor padre `.hud-insight` está en opacity:0 por CSS, los
+  // elementos hijos (heroEl, suffixEl, labelEl, loadingEl, glowEl, etc.) NO
+  // tienen opacity definida en su CSS, así que arrancan con opacity:1 por
+  // defecto. Si por alguna razón el padre cambia a opacity:1 antes de que
+  // show() los resetee, se vería un flash de "0% centros por derecha".
+  //
+  // Para prevenir esto, los inicializamos a su estado "invisible" desde el
+  // momento de creación del componente.
+  gsap.set(connectorDotEl, { scale: 0 })
+  gsap.set(connectorEl,    { opacity: 0, scaleY: 0 })
+  gsap.set(glowEl,         { opacity: 0 })
+  gsap.set(heroEl,         { opacity: 0 })
+  gsap.set(suffixEl,       { opacity: 0, y: 0 })
+  gsap.set(labelEl,        { opacity: 0, y: 8 })
+  gsap.set(loadingEl,      { opacity: 0 })
+
   // ---------------------------------------------------------------------------
   // 3. Estado interno
   // ---------------------------------------------------------------------------
@@ -405,19 +422,22 @@ export function createHudInsightCard({
     if (state.masterTimeline) state.masterTimeline.kill()
     if (state.countTween) state.countTween.kill()
 
-    el.style.opacity = '1'
-    updateProjection()
-
-    await new Promise(r => requestAnimationFrame(r))
-    setupBorderSvg()
-
+    // ─── PASO 1: Resetear estado visual ANTES de hacer el contenedor visible ──
+    // El bug que esto previene: si seteamos el contenedor a opacity=1 ANTES
+    // de resetear los elementos internos, hay un frame donde el navegador
+    // pinta el card con sus valores por defecto (heroEl visible, labelEl
+    // visible con "0%" y "centros por derecha"). Solo después gsap.set los
+    // reseteaba a opacity=0, pero ya era tarde — el usuario veía el flash.
+    //
+    // Solución: dejar TODOS los elementos en su estado inicial (opacity=0,
+    // bordes sin dibujar, dot sin escala) ANTES de hacer visible el
+    // contenedor padre.
     cardEl.classList.remove('hud-insight__card--filled')
     loadingEl.classList.remove('hud-insight__loading--playing')
 
     gsap.set(connectorDotEl, { scale: 0 })
     gsap.set(connectorEl,    { opacity: 0, scaleY: 0 })
     gsap.set(glowEl,         { opacity: 0 })
-    gsap.set(borderPath,     { strokeDashoffset: state.borderPerimeter })
     gsap.set(heroEl,         { opacity: 0 })
     gsap.set(suffixEl,       { opacity: 0, y: 0 })
     gsap.set(labelEl,        { opacity: 0, y: 8 })
@@ -425,6 +445,18 @@ export function createHudInsightCard({
 
     state.currentValor = 0
     numberEl.textContent = '0'
+
+    // ─── PASO 2: Ahora sí mostrar el contenedor (todo dentro ya está invisible) ─
+    el.style.opacity = '1'
+    updateProjection()
+
+    // ─── PASO 3: Esperar un frame para que el DOM se mida correctamente ──
+    // (el setupBorderSvg necesita las dimensiones reales del card)
+    await new Promise(r => requestAnimationFrame(r))
+    setupBorderSvg()
+
+    // Setear el borde recién después de que setupBorderSvg calculó el perímetro
+    gsap.set(borderPath, { strokeDashoffset: state.borderPerimeter })
 
     const tl = gsap.timeline()
     state.masterTimeline = tl

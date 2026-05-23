@@ -16,12 +16,13 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js'
 import { FXAAShader }      from 'three/addons/shaders/FXAAShader.js'
 import { createHeatmap }         from './cancha/heatmap.js'
-import { createConexionesV2 }    from './cancha/conexiones-v2.js'
+import { createConexionesJugadores } from './cancha/conexiones-jugadores.js'
 import { createHeatmapZona }     from './cancha/heatmap-zona.js'
 import { createHeatmapZonasPases } from './cancha/heatmap-zonas-pases.js'
 import { createEventosCancha }   from './cancha/eventos-cancha.js'
 import { createVentanaChart }    from './cancha/ventana-chart.js'
 import { createJugadorCards }    from './cancha/jugador-card.js'
+import { createFichasJugadores } from './cancha/fichas-jugadores.js'
 import { createEquipoCard }      from './cancha/equipo-card.js'
 import { createFlechas }         from './cancha/flechas.js'
 import { createFlechasFlow }     from './cancha/flechas-flow.js'
@@ -144,13 +145,22 @@ goalsGroup.visible   = false
 sombraPlano.visible  = false
 
 // ── Heatmap 3D ──
-const { meshGrid: heatmapGrid, meshSolid: heatmapSolid } = createHeatmap(scene)
+const {
+  meshGrid: heatmapGrid,
+  meshSolid: heatmapSolid,
+  animarEntrada: animarEntradaHeatmap,
+  animarSalida: animarSalidaHeatmap,
+} = createHeatmap(scene)
 
 // ── Set de UUIDs excluidos de darkenNonBloomed ───────────────────────────────
 const excluidos = new Set()
 
 // ── Heatmap Zona ──
-const { grupo: grupoZona } = createHeatmapZona(scene, [{
+const {
+  grupo: grupoZona,
+  animarEntrada: animarEntradaZona,
+  animarSalida: animarSalidaZona,
+} = createHeatmapZona(scene, [{
   x: 13, z: -25, ancho: 40, alto: 18,
   color: 0x1E8CFF, alpha: 0.25, label: 'Banda derecha',
 }])
@@ -213,11 +223,35 @@ const { grupo: grupoEventos, tickEventos } = createEventosCancha(scene, [
 // ── Cards de jugadores ──
 const {
   grupo: grupoJugadores,
+  tarjetas: tarjetasJugadores,
   tickJugadores,
   seleccionar: seleccionarJugador,
   deseleccionar: deseleccionarJugador,
+  escanearJugador,
+  detenerScan,
+  estaEscaneando,
 } = createJugadorCards(scene, JUGADORES, {
   escala: 17, offsetY: 8.0,
+})
+
+// ── Fichas 3D de jugadores en la cancha ───────────────────────────────────
+// Crea las fichas físicas 3D (clones del modelo /fichas/ficha.gltf) en cada
+// posición del array JUGADORES. Las fichas arrancan ocultas — se muestran
+// con el botón "Fichas" más abajo en los controles. La API expone los mismos
+// patrones que las cards: animarEntrada, animarSalida, seleccionar, etc.
+const {
+  grupo: grupoFichas,
+  fichas: fichasJugadores,
+  animarEntrada: animarEntradaFichas,
+  animarSalida: animarSalidaFichas,
+  seleccionar: seleccionarFicha,
+  deseleccionar: deseleccionarFicha,
+  tickFichas,
+  highlightFichas,
+  unhighlightAll,
+} = createFichasJugadores(scene, JUGADORES, {
+  offsetY:     4.0,
+  escalaFicha: 7.0,
 })
 
 // ── Click sobre jugador → seleccionarlo (deselecciona los demás) ───────────
@@ -252,6 +286,52 @@ renderer.domElement.addEventListener('click', (event) => {
     deseleccionarJugador()
   }
 })
+
+// ── Botones de HOLOGRAMA (3 sabores) ──────────────────────────────────────
+// Cada botón cicla por los jugadores y aplica un sabor de holograma sobre
+// la foto. El efecto es una pasada completa de ~1.6s (entrada 0.8s + salida
+// 0.8s) y luego se apaga solo. Cada click dispara una nueva pasada en el
+// siguiente jugador del ciclo.
+//
+// Los 3 sabores:
+//   - Clásico  → etéreo: scanlines + tinte + flicker
+//   - Glitch   → dinámico: clásico + glitches horizontales ocasionales
+//   - Matérico → cyberpunk: glitch + ruido digital + RGB shift
+
+// Estado por sabor: índice del próximo jugador a escanear cuando se pulse
+// ese botón (cada sabor tiene su propio contador).
+const hologramaIdxPorTipo = {
+  clasico:  0,
+  glitch:   0,
+  materico: 0,
+}
+
+function crearBotonHolograma(label, tipo) {
+  const btn = document.createElement('button')
+  btn.className = 'btn'
+  btn.textContent = label
+
+  btn.onclick = () => {
+    if (!grupoJugadores.visible) {
+      console.warn('Activa primero las cards de jugadores (botón "Jugadores")')
+      return
+    }
+
+    // Disparar holograma en el siguiente jugador del ciclo de ESTE sabor
+    const idx = hologramaIdxPorTipo[tipo]
+    const jug = JUGADORES[idx]
+    escanearJugador(jug.numero, { tipo })
+    // Avanzar para el siguiente click (wrap-around al final)
+    hologramaIdxPorTipo[tipo] = (idx + 1) % JUGADORES.length
+  }
+
+  document.querySelector('#cc-controls')?.appendChild(btn)
+  return btn
+}
+
+crearBotonHolograma('Holograma Clásico',  'clasico')
+crearBotonHolograma('Holograma Glitch',   'glitch')
+crearBotonHolograma('Holograma Matérico', 'materico')
 
 // ── Card de equipo ──
 const { grupo: grupoEquipo, tickEquipo } = createEquipoCard(scene, {
@@ -356,7 +436,7 @@ scanner._group.traverse(obj => {
 })
 
 // ── Controles ──
-const { tickCamera, getPhi } = createControls({
+const { tickCamera, getPhi, getTheta, setView } = createControls({
   renderer, camera, fieldMaterial, allLines, setLinesColor, scanner,
 })
 
@@ -404,19 +484,46 @@ const { grupo: grupoSpider3D, tickSpiderChart } = createSpiderChart3D(scene, {
   },
 })
 
-// ── Conexiones V2 ──
+// ── Conexiones entre jugadores ────────────────────────────────────────────
+// Trapecios brillantes que conectan jugadores con intensidades variables.
+// El componente NO crea fichas internas (eso lo maneja fichas-jugadores.js)
+// — solo dibuja las líneas con un efecto de "trazado" al aparecer.
 const CONEXIONES_V2 = [
-  { de:  5, a:  9, intensidad: 0.9 }, { de:  5, a:  6, intensidad: 0.8 },
-  { de:  5, a:  7, intensidad: 0.7 }, { de:  6, a:  9, intensidad: 0.7 },
-  { de:  6, a: 29, intensidad: 0.6 }, { de:  6, a:  4, intensidad: 0.6 },
-  { de:  9, a:  7, intensidad: 0.8 }, { de:  9, a: 10, intensidad: 0.9 },
-  { de:  7, a: 10, intensidad: 0.7 }, { de: 29, a:  4, intensidad: 0.5 },
-  { de: 29, a:  6, intensidad: 0.6 },
+  { de:  5, a:  9, intensidad: 0.9, pases: 22 },
+  { de:  5, a:  6, intensidad: 0.8, pases: 18 },
+  { de:  5, a:  7, intensidad: 0.7, pases: 15 },
+  { de:  6, a:  9, intensidad: 0.7, pases: 14 },
+  { de:  6, a: 29, intensidad: 0.6, pases: 12 },
+  { de:  6, a:  4, intensidad: 0.6, pases: 11 },
+  { de:  9, a:  7, intensidad: 0.8, pases: 17 },
+  { de:  9, a: 10, intensidad: 0.9, pases: 21 },
+  { de:  7, a: 10, intensidad: 0.7, pases: 13 },
+  { de: 29, a:  4, intensidad: 0.5, pases:  8 },
+  { de: 29, a:  6, intensidad: 0.6, pases: 10 },
 ]
-const { grupo: grupoConexionesV2, tickConexionesV2 } = createConexionesV2(
-  scene, JUGADORES, CONEXIONES_V2,
-  { getPhi, alturaBase: -3, alturaCentro: 0, umbralTop: 1.1, escalaFicha: 7.0 }
-)
+const {
+  grupo: grupoConexionesV2,
+  animarEntrada: animarEntradaConexiones,
+  animarSalida: animarSalidaConexiones,
+  tickConexiones: tickConexionesV2,
+} = createConexionesJugadores(scene, JUGADORES, CONEXIONES_V2, {
+  offsetY:      4.0,
+  getPhi,
+  getTheta,
+  alturaBase:   -3,
+  alturaCentro: 0,
+  umbralPhi:    1.1,
+  canvas:       renderer.domElement,
+  camera,
+  labelYOffset: 8,
+  labelEscala:  0.8,
+  // API del componente fichas-jugadores para que las conexiones puedan
+  // oscurecer las fichas no involucradas durante el hover (focus mode)
+  fichasAPI: {
+    highlightFichas: (numerosArray) => highlightFichas(numerosArray),
+    unhighlightAll:  ()              => unhighlightAll(),
+  },
+})
 
 // ── Sistema de capítulos ──
 createHistoria({
@@ -434,7 +541,7 @@ const textInfo = createHudTextInfo({
   value: '247 acciones',
   color: '#00f0ff',
   position: 'bottom',
-  offsetY: 60,
+  offsetY: 180,
   glitchIntensity: 1.0,
   flickerAmount: 0.5,
   glowStrength: 1.0,
@@ -578,7 +685,21 @@ document.querySelector('#cc-controls')?.appendChild(btnInsightChart)
 const insightRange = createHudInsightRange({
   scene,
   camera,
-  anchor3D: { x: -12, y: 0, z: 6 },   // posición de J. Dos Santos (mismo que chart)
+  // El anchor3D apunta al CENTRO del sprite del jugador #6 en world space.
+  // y=8.0 es el offsetY de la card del jugador (posición real del sprite).
+  anchor3D: { x: -12, y: 8.0, z: 6 },
+  // anchorOffsetPxX/Y: offset DIRECTO en píxeles desde el centro proyectado
+  // del sprite. Como el sprite es billboard (THREE.Sprite siempre mira a la
+  // cámara con tamaño en píxeles fijo), un offset en píxeles cae SIEMPRE en
+  // la misma posición relativa al sprite sin importar la vista.
+  //
+  // anchorOffsetPxX positivo = a la DERECHA del centro en pantalla.
+  //   +70px sale del costado derecho del sprite, fuera del círculo.
+  // anchorOffsetPxY = 0 mantiene el conector a la altura del centro del
+  //   sprite (que cae a la altura del pecho/torso del jugador, justo bajo
+  //   los corners cyan del scanner).
+  anchorOffsetPxX: 70,
+  anchorOffsetPxY: 0,
   rangoMin: 45,
   rangoMax: 60,
   unidad: 'Minutos',
@@ -601,6 +722,474 @@ btnInsightRange.onclick = () => {
 }
 document.querySelector('#cc-controls')?.appendChild(btnInsightRange)
 
+// ── Botón Fichas ──────────────────────────────────────────────────────────
+// Toggle de las fichas 3D de jugadores en la cancha.
+//   - 1er click: corre animarEntradaFichas() — todas las fichas suben del piso
+//   - 2do click: corre animarSalidaFichas() — todas bajan al piso
+//
+// El estado se mantiene en fichasVisibles. Si el modelo gltf aún no terminó
+// de cargar, la animación se encola internamente y se ejecuta cuando esté
+// listo (manejado por createFichasJugadores).
+const btnFichas = document.createElement('button')
+btnFichas.className = 'btn'
+btnFichas.textContent = 'Fichas'
+let fichasVisibles = false
+btnFichas.onclick = () => {
+  fichasVisibles = !fichasVisibles
+  if (fichasVisibles) {
+    animarEntradaFichas()
+    btnFichas.classList.add('active')
+  } else {
+    animarSalidaFichas()
+    btnFichas.classList.remove('active')
+  }
+}
+document.querySelector('#cc-controls')?.appendChild(btnFichas)
+
+// ── Botón Conexiones ──────────────────────────────────────────────────────
+// Toggle de las conexiones entre jugadores (componente conexiones-jugadores).
+//   - 1er click: animarEntradaConexiones() — cada línea se "dibuja" desde
+//     el jugador origen hacia el destino con stagger entre conexiones
+//   - 2do click: animarSalidaConexiones() — fade-out de todas las líneas
+//
+// El estado se mantiene en conexionesVisibles. Las conexiones son completamente
+// independientes de las fichas (botón "Fichas" por separado).
+const btnConexiones = document.createElement('button')
+btnConexiones.className = 'btn'
+btnConexiones.textContent = 'Conexiones'
+let conexionesVisibles = false
+btnConexiones.onclick = () => {
+  conexionesVisibles = !conexionesVisibles
+  if (conexionesVisibles) {
+    animarEntradaConexiones()
+    btnConexiones.classList.add('active')
+  } else {
+    animarSalidaConexiones()
+    btnConexiones.classList.remove('active')
+  }
+}
+document.querySelector('#cc-controls')?.appendChild(btnConexiones)
+
+
+// ── BOTÓN DEMO SECUENCIA ──────────────────────────────────────────────────
+// Escena cinemática extendida con 7 pasos narrativos:
+//
+//   PASO 1   Cambio a vista 'Horizontal top' (cenital)
+//   PASO 2   Scanner DOS pasadas completas + textInfo "Analizando > 247 acciones"
+//   PASO 3   Vista 'Diagonal' + zona.show() + textInfo cambia a "Ataque > ..."
+//            + pausa de 5s para apreciar el contexto narrativo
+//   PASO 4   Salida de Zona PRIMERO → DESPUÉS entrada del heatmap volumétrico
+//            + textInfo cambia a "Centros > 73%..."
+//   PASO 5   (secuencial) setView('horizontal perspectiva') → insightCard.show()
+//            → wait 5s. Heatmap se queda visible, texto no cambia.
+//   PASO 6   3 etapas encadenadas:
+//            6a) insightCard.hide() completo
+//            6b) hideHeatmap() + fade-out del textInfo
+//            6c) setView('vertical perspectiva') + entrada del jugador
+//   PASO 7   3 etapas:
+//            7a) seleccionarJugador(#6) — corners cyan
+//            7b) escanearJugador(#6, glitch) — holograma 2.6s
+//            7c) insightRange.show() + textInfo "Líder de recuperación..."
+//   PASO 6   insightCard.hide()
+//   PASO 7   Vista 'Vertical perspectiva' + entrada J. Dos Santos +
+//            selección + holograma glitch + insightRange.show()
+//
+// Toggle: primer click → IDA (secuencia completa)
+//         segundo click → VUELTA (reset, esconde todo en orden inverso)
+//
+// Durante las animaciones el botón se bloquea (demoEnProgreso) para evitar
+// dobles clicks que rompan el flujo.
+const JUGADOR_DEMO = JUGADORES.find(j => j.numero === 6)   // J. Dos Santos
+
+let demoActiva     = false   // estado del toggle (ON al finalizar IDA)
+let demoEnProgreso = false   // bloqueo mientras corren las animaciones
+
+// Promesa que resuelve después de N segundos usando gsap.delayedCall
+function wait(seconds) {
+  return new Promise(resolve => gsap.delayedCall(seconds, resolve))
+}
+
+// ── Helpers de visibilidad/animación para componentes 3D ───────────────────
+// El heatmap y la zona NO exponen métodos show/hide propios, así que usamos
+// gsap para animar opacity de sus materiales y el flag .visible del grupo/mesh.
+// Patrón: entrada = visible=true + fade-in opacity. Salida = fade-out + visible=false.
+
+function fadeInMesh(mesh, duration = 0.6, targetOpacity = 1) {
+  if (!mesh) return
+  mesh.visible = true
+  if (mesh.material) {
+    mesh.material.transparent = true
+    mesh.material.opacity = 0
+    gsap.to(mesh.material, { opacity: targetOpacity, duration, ease: 'power2.out' })
+  }
+}
+
+function fadeOutMesh(mesh, duration = 0.6) {
+  if (!mesh) return
+  if (mesh.material) {
+    gsap.to(mesh.material, {
+      opacity: 0, duration, ease: 'power2.in',
+      onComplete: () => { mesh.visible = false },
+    })
+  } else {
+    mesh.visible = false
+  }
+}
+
+// Para grupos (varios meshes hijos), recorremos todos los materiales
+function fadeInGroup(grupo, duration = 0.6, targetOpacity = 1) {
+  if (!grupo) return
+  grupo.visible = true
+  grupo.traverse(obj => {
+    if (obj.material) {
+      obj.material.transparent = true
+      obj.material.opacity = 0
+      gsap.to(obj.material, { opacity: targetOpacity, duration, ease: 'power2.out' })
+    }
+  })
+}
+
+function fadeOutGroup(grupo, duration = 0.6) {
+  if (!grupo) return
+  const materials = []
+  grupo.traverse(obj => {
+    if (obj.material) materials.push(obj.material)
+  })
+  if (materials.length === 0) {
+    grupo.visible = false
+    return
+  }
+  let completed = 0
+  materials.forEach(mat => {
+    gsap.to(mat, {
+      opacity: 0, duration, ease: 'power2.in',
+      onComplete: () => {
+        completed++
+        if (completed === materials.length) grupo.visible = false
+      },
+    })
+  })
+}
+
+// Helpers para el componente Zona: envuelven sus propias animaciones
+// animarEntrada/animarSalida en promesas para poder usar await en el flujo
+// cinemático. Las animaciones del Zona son complejas (expansión en dos fases:
+// primero crece en Z, luego en X, con nodos que viajan desde el centro hacia
+// las esquinas y fade del label) y NO funcionan con un fade-in genérico de
+// opacity — por eso necesitamos sus métodos nativos.
+function showZona() {
+  return new Promise(resolve => {
+    if (animarEntradaZona) animarEntradaZona(resolve)
+    else { grupoZona.visible = true; resolve() }
+  })
+}
+function hideZona() {
+  return new Promise(resolve => {
+    if (animarSalidaZona) animarSalidaZona(resolve)
+    else { grupoZona.visible = false; resolve() }
+  })
+}
+
+// Helpers para el componente Heatmap volumétrico: envuelven sus animaciones
+// nativas. El heatmap tiene una entrada cinematográfica de ~3s:
+//   - Fade-in de opacidad (0.6s) — aparece la malla plana
+//   - Pausa de 0.8s
+//   - Crecimiento de los picos con elastic.out (2.2s) — los picos "rebotan"
+//     al llegar a su altura final como si los datos emergieran con inercia
+//
+// La salida dura ~2s:
+//   - Colapso lento de los picos hacia el suelo (1.6s power2.inOut)
+//   - Fade-out de opacidad al final (0.5s)
+//
+// Usar fadeInMesh genérico NO funciona porque solo cambia opacity sin
+// animar el mult de altura — los picos aparecen instantáneamente.
+function showHeatmap() {
+  return new Promise(resolve => {
+    if (animarEntradaHeatmap) animarEntradaHeatmap(resolve)
+    else { heatmapGrid.visible = true; heatmapSolid.visible = true; resolve() }
+  })
+}
+function hideHeatmap() {
+  return new Promise(resolve => {
+    if (animarSalidaHeatmap) animarSalidaHeatmap(resolve)
+    else { heatmapGrid.visible = false; heatmapSolid.visible = false; resolve() }
+  })
+}
+
+// Aplica visibilidad a TODAS las tarjetas: solo el jugador con numero=N
+// queda visible. Si N=null, restaura todas visibles.
+function mostrarSoloJugadorEnTarjetas(numero) {
+  tarjetasJugadores.forEach(t => {
+    const esElegido = (numero == null) || (t.jugador.numero === numero)
+    t.sprite.visible        = esElegido
+    t.spriteNom.visible     = esElegido
+    t.spriteFoto.visible    = esElegido
+  })
+}
+
+// Animación de entrada manual SOLO para el jugador especificado
+function entradaJugadorSolo(t) {
+  t.sprite.position.y     = -8
+  t.spriteFoto.position.y = -8
+  t.spriteNom.position.y  = -8
+  t.sprite.material.opacity     = 1
+  t.spriteFoto.material.opacity = 1
+  t.spriteNom.material.opacity  = 0
+
+  gsap.to(t.sprite.position,     { y: 8.0, duration: 0.7, ease: 'power3.out' })
+  gsap.to(t.spriteFoto.position, { y: 8.0, duration: 0.7, ease: 'power3.out' })
+  gsap.to(t.spriteNom.position,  { y: 8.0, duration: 0.7, ease: 'power3.out' })
+  gsap.delayedCall(0.3, () => {
+    gsap.to(t.spriteNom.material, { opacity: 1, duration: 0.5, ease: 'power2.out' })
+  })
+}
+
+function salidaJugadorSolo(t) {
+  gsap.to(t.sprite.position,     { y: -8, duration: 0.45, ease: 'power2.in' })
+  gsap.to(t.spriteFoto.position, { y: -8, duration: 0.45, ease: 'power2.in' })
+  gsap.to(t.spriteNom.position,  { y: -8, duration: 0.45, ease: 'power2.in' })
+  gsap.to(t.spriteNom.material,  { opacity: 0, duration: 0.25, ease: 'power2.in' })
+}
+
+// Estados auxiliares para saber qué componentes están visibles
+let textInfoYaIniciado = false
+
+const btnDemo = document.createElement('button')
+btnDemo.className = 'btn'
+btnDemo.textContent = 'Demo Secuencia'
+btnDemo.onclick = async () => {
+  if (demoEnProgreso) {
+    console.warn('Demo en progreso, espera a que termine la animación.')
+    return
+  }
+  demoEnProgreso = true
+
+  if (!demoActiva) {
+    // ═══════════════════════ IDA ═══════════════════════
+    btnDemo.textContent = 'Demo Secuencia ● activa'
+
+    // ── PASO 1: cambio a vista Horizontal Top ──────────────────────────
+    await setView('horizontal top')
+
+    // ── PASO 2: scanner DOS pasadas + textInfo "Analizando > 247 acciones"
+    // Disparamos ambos en paralelo. El textInfo se muestra con su animación
+    // de entrada inicial; si ya estuvo visible antes, usamos replay para
+    // cambiar texto.
+    if (!textInfoYaIniciado) {
+      textInfo.show()
+      textInfoYaIniciado = true
+    } else {
+      textInfo.replay({ label: 'Analizando', value: '247 acciones' })
+    }
+    // scanNTimes(2) resuelve cuando terminan las 2 pasadas + fade-out.
+    await scanner.scanNTimes(2)
+
+    // ── PASO 3: vista Diagonal + zona.show() + textInfo cambia ─────────
+    // setView arranca + en paralelo lanzamos la animación de entrada del
+    // componente Zona (que tiene un efecto de expansión propio en dos
+    // fases: crece en Z, luego en X, con nodos saliendo del centro) y
+    // cambiamos el texto del textInfo. Esperamos a que setView termine,
+    // y después aguardamos 5 segundos para que el espectador lea el
+    // texto narrativo y observe la zona iluminada.
+    const p3a = setView('diagonal')
+    showZona()
+    textInfo.replay({
+      label: 'Ataque',
+      value: 'América concentra su ataque por la banda izquierda',
+    })
+    await p3a
+    await wait(5.0)
+
+    // ── PASO 4: salida de Zona → entrada del heatmap volumétrico + texto
+    // Primero esperamos a que la Zona termine su animación de salida completa
+    // (~0.55s con sus dos fases: encoge en X y luego en Z). DESPUÉS, en
+    // paralelo, disparamos la entrada del heatmap volumétrico (animación
+    // cinematográfica de ~3s con fade-in de la malla + pausa + crecimiento
+    // elástico de los picos) y el cambio de texto del textInfo.
+    //
+    // NO esperamos a que el heatmap termine su entrada completa aquí —
+    // dejamos que la animación corra mientras el textInfo cambia y luego
+    // el paso 5 toma el control.
+    await hideZona()
+    showHeatmap()
+    textInfo.replay({
+      label: 'Centros',
+      value: '73% del total son en esta zona',
+    })
+    // Esperamos a que la entrada del heatmap esté visualmente completa
+    // (~3s con el rebote elástico) antes de pasar al paso 5
+    await wait(3.0)
+
+    // ── PASO 5: secuencial ─────────────────────────────────────────────
+    // Primero esperamos a que la cámara llegue a 'horizontal perspectiva'.
+    // Después disparamos la entrada del insightCard. Después esperamos
+    // 5 segundos para que el espectador lea el card.
+    //
+    // El heatmap volumétrico se queda visible durante todo este paso —
+    // se ocultará en el PASO 6 junto con el insightCard.
+    // El textInfo NO cambia de texto: sigue mostrando "Centros > 73% del
+    // total son en esta zona" del paso anterior.
+    await setView('horizontal perspectiva')
+    if (!insightVisible) {
+      insightCard.show()
+      insightVisible = true
+    }
+    await wait(5.0)
+
+    // ── PASO 6: salida del card → salida del heatmap+texto → vista+jugador
+    // Tres etapas encadenadas con timing fluido:
+    //   6a) insightCard.hide() — esperamos a que termine completamente
+    //   6b) En paralelo: hideHeatmap() + fade-out del textInfo (DOM opacity)
+    //   6c) En paralelo: setView('vertical perspectiva') + entrada del jugador
+    insightCard.hide()
+    insightVisible = false
+    // Esperar a que termine la animación de salida del card (~1s)
+    await wait(1.0)
+
+    // 6b) Salida del heatmap + desaparece el textInfo
+    if (heatmapGrid.visible) {
+      hideHeatmap()
+    }
+    if (textInfo.el) {
+      gsap.to(textInfo.el, { opacity: 0, duration: 0.5, ease: 'power2.in' })
+    }
+    // Esperar a que el heatmap colapse (~2s, animación con colapso elástico
+    // + fade-out final). El textInfo termina su fade en 0.5s y queda esperando.
+    await wait(2.0)
+
+    // 6c) Cambio de vista + entrada del jugador EN PARALELO
+    const p6vista = setView('vertical perspectiva')
+
+    // Activar grupo de jugadores con SOLO el #6 visible
+    if (!grupoJugadores.visible) {
+      mostrarSoloJugadorEnTarjetas(JUGADOR_DEMO.numero)
+      grupoJugadores.visible = true
+    } else {
+      mostrarSoloJugadorEnTarjetas(JUGADOR_DEMO.numero)
+    }
+    const t = tarjetasJugadores.find(x => x.jugador.numero === JUGADOR_DEMO.numero)
+    if (t) entradaJugadorSolo(t)
+
+    // Esperar a que la cámara llegue Y a que la entrada del jugador termine
+    // (~0.9s). La cámara suele tardar ~1s en llegar, así que esperamos por
+    // ambas cosas con un Promise.all implícito (await la cámara + wait para
+    // la entrada del sprite que corre en paralelo).
+    await p6vista
+    await wait(0.3)   // margen extra para que el sprite termine de subir
+
+    // ── PASO 7: selección + holograma + insightRange + textInfo ─────────
+    //   7a) seleccionarJugador(#6) — corners cyan
+    //   7b) escanearJugador(#6, glitch) — holograma 2.6s
+    //   7c) En paralelo: insightRange.show() + textInfo nuevo
+    seleccionarJugador(JUGADOR_DEMO.numero)
+    await wait(0.6)
+
+    // Holograma glitch sobre la foto del jugador
+    escanearJugador(JUGADOR_DEMO.numero, { tipo: 'glitch' })
+    await wait(2.8)
+
+    // 7c) Insight-range + nuevo texto del textInfo EN PARALELO
+    if (!insightRangeVisible) {
+      insightRange.show()
+      insightRangeVisible = true
+    }
+    // Restaurar la opacidad del textInfo (que bajamos a 0 en paso 6) y
+    // cambiar el texto al nuevo mensaje del paso 7.
+    if (textInfo.el) {
+      textInfo.el.style.opacity = ''   // restaurar a su valor CSS original
+    }
+    textInfo.replay({
+      label: 'Líder de recuperación',
+      value: 'J. Dos Santos es el jugador con más balones recuperados',
+    })
+    // Esperar a que termine la entrada del insightRange (~3s)
+    await wait(3.0)
+
+    demoActiva = true
+    demoEnProgreso = false
+  } else {
+    // ═══════════════════════ VUELTA ═══════════════════════
+    btnDemo.textContent = 'Demo Secuencia'
+
+    // Orden inverso al de la IDA — ocultamos lo último que apareció primero.
+
+    // 1) Ocultar insight-range
+    if (insightRangeVisible) {
+      insightRange.hide()
+      insightRangeVisible = false
+    }
+    await wait(0.4)
+
+    // 2) Deseleccionar jugador
+    deseleccionarJugador()
+    await wait(0.3)
+
+    // 3) Cancelar holograma si quedó algo
+    if (estaEscaneando(JUGADOR_DEMO.numero)) {
+      detenerScan(JUGADOR_DEMO.numero)
+      await wait(0.5)
+    }
+
+    // 4) Salida del jugador
+    const t = tarjetasJugadores.find(x => x.jugador.numero === JUGADOR_DEMO.numero)
+    if (t) salidaJugadorSolo(t)
+    await wait(0.5)
+
+    // 5) Restaurar todas las cards + ocultar grupo
+    mostrarSoloJugadorEnTarjetas(null)
+    grupoJugadores.visible = false
+    if (t) {
+      t.sprite.material.opacity     = 1
+      t.spriteFoto.material.opacity = 1
+      t.spriteNom.material.opacity  = 0
+    }
+
+    // 6) Asegurar que heatmap, zona e insightCard estén ocultos
+    //    (en caso de que el usuario haya interrumpido la IDA a mitad)
+    if (insightVisible) {
+      insightCard.hide()
+      insightVisible = false
+      await wait(0.3)
+    }
+    // Solo intentar ocultar el heatmap si está visible (la animarSalida del
+    // componente puede tener efectos extraños si se llama estando ya oculto)
+    if (heatmapGrid.visible) {
+      hideHeatmap()
+    }
+    // Solo intentar ocultar la zona si estaba visible (animarSalida del
+    // componente puede tener efectos extraños si se llama estando ya oculto)
+    if (grupoZona.visible) {
+      hideZona()
+    }
+    await wait(0.7)
+
+    // 7) Ocultar textInfo si está visible
+    if (textInfoYaIniciado) {
+      // El textInfo no tiene método hide explícito en su API; lo ocultamos
+      // por opacidad del elemento DOM si existe.
+      if (textInfo.el) {
+        gsap.to(textInfo.el, { opacity: 0, duration: 0.4, ease: 'power2.in' })
+      }
+    }
+
+    // 8) Vuelta a vista inicial
+    await setView('horizontal perspectiva')
+
+    // Restaurar opacidad del textInfo para próxima vez (sin mostrarlo aún)
+    if (textInfo.el) {
+      textInfo.el.style.opacity = ''
+    }
+
+    demoActiva = false
+    demoEnProgreso = false
+  }
+}
+document.querySelector('#cc-controls')?.appendChild(btnDemo)
+
+
+
+
+
 // ── Selective Bloom ──
 const bloomLayer   = new THREE.Layers()
 bloomLayer.set(BLOOM_LAYER)
@@ -609,7 +1198,12 @@ const materialsMap = {}
 
 function darkenNonBloomed(obj) {
   if (excluidos.has(obj.uuid)) return
-  if (obj.isMesh && !obj.layers.isEnabled(BLOOM_LAYER) && !obj.layers.isEnabled(CANCHA_BLOOM_LAYER)) {
+  // Incluimos isSprite además de isMesh: los sprites (fichas-jugadores,
+  // texturas de canvas brillantes) por defecto contribuyen al pase de
+  // bloom y se ven amplificados. Al oscurecerlos durante el bloom pass,
+  // se renderizan tal cual en el pase normal pero NO aportan luz extra
+  // al efecto de bloom.
+  if ((obj.isMesh || obj.isSprite) && !obj.layers.isEnabled(BLOOM_LAYER) && !obj.layers.isEnabled(CANCHA_BLOOM_LAYER)) {
     materialsMap[obj.uuid] = obj.material
     obj.material = darkMaterial
   }
@@ -689,6 +1283,7 @@ function animate() {
 
   tickCamera()
   tickJugadores(camera)
+  tickFichas(camera)
   tickConexionesV2(camera)
   tickEquipo(camera)
   tickFlechas(dt, camera)
