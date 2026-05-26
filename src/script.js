@@ -33,6 +33,7 @@ import { createStatCard }        from './cancha/stat-card.js'
 import { createChartStatCard }   from './cancha/chart-stat-card.js'
 import { createFlechasParabola } from './cancha/flechas-parabola.js'
 import { createVentanaChart3D }  from './cancha/ventana-chart-3d.js'
+import { createVentanaChart3DV2 } from './cancha/ventana-chart-3d-v2.js'
 import { createSpiderChart3D }   from './cancha/spider-chart-3d.js'
 import { createHistoria }        from './cancha/historia.js'
 import { createHudTextInfo }     from './cancha/hud-text-info.js'
@@ -46,10 +47,6 @@ import { ScannerEffect }         from './cancha/scanner-effect.js'
 const { scene, camera, renderer } = createScene()
 
 // ── Fade general de negro a transparente al cargar la intro ──
-// Overlay HTML por encima del canvas que cubre toda la pantalla. Empieza
-// completamente opaco (negro puro) y se desvanece junto con el bouncing
-// cuando el GLB de la cancha termina de cargar. Así el usuario nunca ve
-// el estado intermedio de "estadio vacío + cargando".
 const fadeOverlay = document.createElement('div')
 fadeOverlay.style.cssText = `
   position: fixed;
@@ -64,59 +61,40 @@ document.body.appendChild(fadeOverlay)
 const { sombraPlano } = createLights(scene)
 
 const { fieldMaterial, bgTexture } = createField(scene, '/cancha.glb', {
-  // Animación de intro: la cancha + líneas + grid + porterías + resplandor
-  // aparecen al 60% y crecen al 100% con un bouncing muy suave (back.out(1.4)).
-  // Las 5 cosas se animan SIMULTÁNEAMENTE para que se sientan como una sola
-  // pieza unificada.
-  //
-  // Las líneas/grid/porterías/resplandor permanecen OCULTAS hasta que el GLB
-  // termine de cargar (visible = false desde el inicio). Así evitamos que
-  // aparezcan "flotando" en el estadio antes de que la cancha esté lista. En
-  // el onReady las hacemos visibles justo antes de arrancar el bouncing.
   onReady: (canchaScene, escalaFinal) => {
     canchaScene.scale.setScalar(escalaFinal * 0.60)
 
-    // Hacer visibles las líneas/grid/porterías/resplandor ahora que la cancha cargó
     linesGroup.visible   = true
     gridMesh.visible     = true
     goalsGroup.visible   = true
     sombraPlano.visible  = true
 
     const tl = gsap.timeline()
-    // Cancha: escala de 0.60×escalaFinal → escalaFinal
     tl.to(canchaScene.scale, {
       x: escalaFinal, y: escalaFinal, z: escalaFinal,
       duration: 1.2,
       ease: 'back.out(1.4)',
     }, 0)
-    // Líneas: escala de 0.60 → 1.0 (valor "normal" del grupo)
     tl.to(linesGroup.scale, {
       x: 1, y: 1, z: 1,
       duration: 1.2,
       ease: 'back.out(1.4)',
     }, 0)
-    // Grid: escala de 0.60 → 1.0 (igual que las líneas)
     tl.to(gridMesh.scale, {
       x: 1, y: 1, z: 1,
       duration: 1.2,
       ease: 'back.out(1.4)',
     }, 0)
-    // Porterías: escala de 0.60 → 1.0
     tl.to(goalsGroup.scale, {
       x: 1, y: 1, z: 1,
       duration: 1.2,
       ease: 'back.out(1.4)',
     }, 0)
-    // Resplandor azul de la cancha: escala de 0.60 → 1.0
     tl.to(sombraPlano.scale, {
       x: 1, y: 1, z: 1,
       duration: 1.2,
       ease: 'back.out(1.4)',
     }, 0)
-    // Fade general del overlay negro: de opacity 1 → 0 con duración MÁS CORTA
-    // que el bouncing (0.6s vs 1.2s), para que el negro desaparezca a la mitad
-    // del bouncing y el usuario pueda ver los últimos ~600ms de la animación
-    // (el "asentamiento" del overshoot) sin el velo negro encima.
     tl.to(fadeOverlay, {
       opacity: 0,
       duration: 0.6,
@@ -131,10 +109,6 @@ const { allLines, linesGroup, setLinesColor }  = createLines(scene)
 const goalsGroup = createGoals(scene)
 const gridMesh = createGrid(scene, 0.35, 0)
 
-// Setear la escala inicial al 60% Y ocultar los grupos INMEDIATAMENTE, antes
-// de que se rendericen. Permanecen ocultos hasta que el GLB de la cancha
-// cargue (se hacen visibles en el onReady justo antes del bouncing). Así
-// el usuario no ve líneas/porterías/resplandor flotando en el estadio sin cancha.
 linesGroup.scale.setScalar(0.60)
 gridMesh.scale.setScalar(0.60)
 goalsGroup.scale.setScalar(0.60)
@@ -152,7 +126,6 @@ const {
   animarSalida: animarSalidaHeatmap,
 } = createHeatmap(scene)
 
-// ── Set de UUIDs excluidos de darkenNonBloomed ───────────────────────────────
 const excluidos = new Set()
 
 // ── Heatmap Zona ──
@@ -235,10 +208,6 @@ const {
 })
 
 // ── Fichas 3D de jugadores en la cancha ───────────────────────────────────
-// Crea las fichas físicas 3D (clones del modelo /fichas/ficha.gltf) en cada
-// posición del array JUGADORES. Las fichas arrancan ocultas — se muestran
-// con el botón "Fichas" más abajo en los controles. La API expone los mismos
-// patrones que las cards: animarEntrada, animarSalida, seleccionar, etc.
 const {
   grupo: grupoFichas,
   fichas: fichasJugadores,
@@ -254,21 +223,18 @@ const {
   escalaFicha: 7.0,
 })
 
-// ── Click sobre jugador → seleccionarlo (deselecciona los demás) ───────────
-// Si clickea fuera de cualquier jugador, deselecciona todo.
+// ── Click sobre jugador → seleccionarlo ───────────────────────────────────
 const _raycaster = new THREE.Raycaster()
 const _mouse = new THREE.Vector2()
 renderer.domElement.addEventListener('click', (event) => {
-  if (!grupoJugadores.visible) return  // solo cuando las cards están activas
+  if (!grupoJugadores.visible) return
 
-  // Normalizar coordenadas del mouse a NDC (-1 a +1)
   const rect = renderer.domElement.getBoundingClientRect()
   _mouse.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1
   _mouse.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1
 
   _raycaster.setFromCamera(_mouse, camera)
 
-  // Recolectar todos los sprites de jugador-card del grupo
   const candidatos = []
   grupoJugadores.traverse(obj => {
     if (obj.userData && obj.userData.esJugadorCard && obj.visible) {
@@ -278,28 +244,14 @@ renderer.domElement.addEventListener('click', (event) => {
 
   const intersects = _raycaster.intersectObjects(candidatos, false)
   if (intersects.length > 0) {
-    // Hay hit → seleccionar el primero (más cercano)
     const numero = intersects[0].object.userData.jugadorNumero
     seleccionarJugador(numero)
   } else {
-    // Click fuera de cualquier jugador → deseleccionar
     deseleccionarJugador()
   }
 })
 
 // ── Botones de HOLOGRAMA (3 sabores) ──────────────────────────────────────
-// Cada botón cicla por los jugadores y aplica un sabor de holograma sobre
-// la foto. El efecto es una pasada completa de ~1.6s (entrada 0.8s + salida
-// 0.8s) y luego se apaga solo. Cada click dispara una nueva pasada en el
-// siguiente jugador del ciclo.
-//
-// Los 3 sabores:
-//   - Clásico  → etéreo: scanlines + tinte + flicker
-//   - Glitch   → dinámico: clásico + glitches horizontales ocasionales
-//   - Matérico → cyberpunk: glitch + ruido digital + RGB shift
-
-// Estado por sabor: índice del próximo jugador a escanear cuando se pulse
-// ese botón (cada sabor tiene su propio contador).
 const hologramaIdxPorTipo = {
   clasico:  0,
   glitch:   0,
@@ -317,11 +269,9 @@ function crearBotonHolograma(label, tipo) {
       return
     }
 
-    // Disparar holograma en el siguiente jugador del ciclo de ESTE sabor
     const idx = hologramaIdxPorTipo[tipo]
     const jug = JUGADORES[idx]
     escanearJugador(jug.numero, { tipo })
-    // Avanzar para el siguiente click (wrap-around al final)
     hologramaIdxPorTipo[tipo] = (idx + 1) % JUGADORES.length
   }
 
@@ -362,7 +312,7 @@ const FLECHAS_FLOW = [
 ]
 const { grupo: grupoFlechasFlow, tickFlechasFlow, ocultarPuntasFlow, mostrarPuntasFlow } = createFlechasFlow(scene, FLECHAS_FLOW)
 
-// ── Flechas Dash — solo pases, sin disparo ──
+// ── Flechas Dash ──
 const FLECHAS_DASH = [
   { de: jxz(5), a: jxz(9) },
   { de: jxz(6), a: jxz(5) },
@@ -381,7 +331,7 @@ const { grupo: grupoFlechasDisparo, tickFlechasDisparo,
 
 // ── Flechas Parabólicas ──
 const FLECHAS_PARABOLA = [
-  { de: jxz(29), a: jxz(7) },  // ← sin estilo
+  { de: jxz(29), a: jxz(7) },
 ]
 const {
   grupo:                grupoParabola,
@@ -419,7 +369,7 @@ const { wrapper: chartCardEl, tickChartStatCard } = createChartStatCard(scene, c
   },
 })
 
-// ── Scanner Effect ──────────────────────────────────────────────────────────
+// ── Scanner Effect ──
 const scanner = new ScannerEffect(scene, {
   width:       68,
   height:      105,
@@ -445,8 +395,8 @@ const { wrapper: ventanaChartEl } = createVentanaChart({
   titulo: 'Centros por partido', subtitulo: 'Resumen mensual',
   badge: '+18% vs anterior', rotacionY: -12, posX: '50%', posY: '50%',
   series: [
-    { label: 'Este año',     color: '#4ED3FF', puntos: [15, 21, 18, 19, 26, 32] },
-    { label: 'Año anterior', color: '#7BA4F5', puntos: [13, 18, 16, 17, 21, 26] },
+    { label: 'Este año',     color: '#4ED3FF', puntos: [8,  16, 11, 19, 24, 22] },
+    { label: 'Año anterior', color: '#7BA4F5', puntos: [14, 12, 18, 13, 16, 15] },
   ],
   etiquetas: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
 })
@@ -463,10 +413,33 @@ const { grupo: grupoVentana3D } = createVentanaChart3D(scene, {
   etiquetas: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
 })
 
+// ── Ventana Chart 3D V2 ──
+// Propuesta alternativa del ventana-chart con Three.js (volumen real,
+// SpotLight propio, BoxGeometry + CanvasTexture). Coexiste con el otro
+// card 3D mediante un botón "Gráfica 3D" propio. La ponemos en x=0
+// (centro de la cancha) para que no se solape con el original.
+const { tick: tickVentana3DV2 } = createVentanaChart3DV2(scene, camera, {
+  titulo: 'Centros por partido',
+  subtitulo: 'Resumen mensual',
+  badge: '+18% vs anterior',
+  series: [
+    { label: 'Este año',     color: '#4ED3FF', puntos: [8,  16, 11, 19, 24, 22] },
+    { label: 'Año anterior', color: '#7BA4F5', puntos: [14, 12, 18, 13, 16, 15] },
+  ],
+  etiquetas: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
+  posicion:  { x: 0, y: 18, z: -20 },
+  rotacionY: 0.3,
+})
+
 // ── Spider Chart 3D ──
+// Panel flotante del radar con vidrio "premium": MeshPhysicalMaterial con
+// clearcoat que recibe los highlights del SpotLight cenital y los 4 PointLights
+// de las esquinas. El cristal tiene profundidad 3D real (BoxGeometry interna)
+// para que los cantos sean visibles al rotar la cámara.
 const { grupo: grupoSpider3D, tickSpiderChart } = createSpiderChart3D(scene, {
-  posicion: { x: 30, y: 18, z: -20 }, rotacionY: -0.3,
-  anchoMundo: 50, altoMundo: 38, allLines,
+  posicion: { x: 30, y: 18, z: -20 }, rotacionY: 0,
+  anchoMundo: 64, altoMundo: 44, allLines,
+  profundidad: 2.5,                        // grosor 3D del bloque del cristal
   datos: {
     titulo: 'Radar General',
     ejes: [
@@ -484,10 +457,7 @@ const { grupo: grupoSpider3D, tickSpiderChart } = createSpiderChart3D(scene, {
   },
 })
 
-// ── Conexiones entre jugadores ────────────────────────────────────────────
-// Trapecios brillantes que conectan jugadores con intensidades variables.
-// El componente NO crea fichas internas (eso lo maneja fichas-jugadores.js)
-// — solo dibuja las líneas con un efecto de "trazado" al aparecer.
+// ── Conexiones entre jugadores ──
 const CONEXIONES_V2 = [
   { de:  5, a:  9, intensidad: 0.9, pases: 22 },
   { de:  5, a:  6, intensidad: 0.8, pases: 18 },
@@ -517,8 +487,6 @@ const {
   camera,
   labelYOffset: 8,
   labelEscala:  0.8,
-  // API del componente fichas-jugadores para que las conexiones puedan
-  // oscurecer las fichas no involucradas durante el hover (focus mode)
   fichasAPI: {
     highlightFichas: (numerosArray) => highlightFichas(numerosArray),
     unhighlightAll:  ()              => unhighlightAll(),
@@ -547,7 +515,6 @@ const textInfo = createHudTextInfo({
   glowStrength: 1.0,
 })
 
-// Lista de textos que se irán mostrando en cada click
 const ESCENARIOS_TEXTO = [
   { label: 'Analizando',  value: '247 acciones' },
   { label: 'Analizando',  value: '99 acciones' },
@@ -570,12 +537,9 @@ btnTextInfo.className = 'btn'
 btnTextInfo.textContent = 'Text Info'
 btnTextInfo.onclick = () => {
   if (!textInfoYaMostrado) {
-    // Primer click: animación de entrada con los valores iniciales
     textInfo.show()
     textInfoYaMostrado = true
   } else {
-    // Clicks siguientes: escoger escenario random distinto al anterior
-    // y reproducir la secuencia ordenada (label → > → value)
     let idx
     do {
       idx = Math.floor(Math.random() * ESCENARIOS_TEXTO.length)
@@ -592,7 +556,7 @@ document.querySelector('#cc-controls')?.appendChild(btnTextInfo)
 const insightCard = createHudInsightCard({
   scene,
   camera,
-  anchor3D: { x: 30, y: 0, z: -15 },   // ajusta a un punto real de tu cancha
+  anchor3D: { x: 30, y: 0, z: -15 },
   valor: 73,
   sufijo: '%',
   etiqueta: 'centros por derecha',
@@ -619,10 +583,10 @@ document.querySelector('#cc-controls')?.appendChild(btnInsight)
 const insightHorizontal = createHudInsightHorizontal({
   scene,
   camera,
-  anchor3D: { x: -20, y: 0, z: 0 },   // punto 3D a la izquierda del card
+  anchor3D: { x: -20, y: 0, z: 0 },
   valor: 3,
   unidad: 'Segundos',
-  maxValor: 10,                        // 3/10 = 30% del ring
+  maxValor: 10,
   titulo: 'Tras recuperación',
   secuencia: ['recuperación', 'centro'],
   color: '#00f0ff',
@@ -647,7 +611,7 @@ document.querySelector('#cc-controls')?.appendChild(btnInsightH)
 const insightChart = createHudInsightChart({
   scene,
   camera,
-  anchor3D: { x: -12, y: 0, z: 6 },   // posición de J. Dos Santos en la cancha
+  anchor3D: { x: -12, y: 0, z: 6 },
   valor: 121,
   etiqueta: 'finalizaciones',
   serie: [
@@ -658,14 +622,11 @@ const insightChart = createHudInsightChart({
   ],
   destacado: { indice: 2.65, label: '+80%' },
   color: '#00f0ff',
-  offsetX: 90,         // separación horizontal fija (px)
-  offsetY: 0,          // card alineado verticalmente con el conector
-  // Modo "píxeles fijos": anchorRadius3D = 0 desactiva el modo proporcional,
-  // así anchorOffsetX/Y se interpretan como PÍXELES literales.
-  // El conector siempre tendrá la misma forma en pantalla, sin importar la vista.
+  offsetX: 90,
+  offsetY: 0,
   anchorRadius3D: 0,
-  anchorOffsetX: 0,    // sin desplazamiento horizontal (sale del centro proyectado)
-  anchorOffsetY: -15,  // 15px arriba para compensar centro-círculo vs centro-sprite
+  anchorOffsetX: 0,
+  anchorOffsetY: -15,
   countDuration: 1.2,
   chartDuration: 1.6,
 })
@@ -685,19 +646,7 @@ document.querySelector('#cc-controls')?.appendChild(btnInsightChart)
 const insightRange = createHudInsightRange({
   scene,
   camera,
-  // El anchor3D apunta al CENTRO del sprite del jugador #6 en world space.
-  // y=8.0 es el offsetY de la card del jugador (posición real del sprite).
   anchor3D: { x: -12, y: 8.0, z: 6 },
-  // anchorOffsetPxX/Y: offset DIRECTO en píxeles desde el centro proyectado
-  // del sprite. Como el sprite es billboard (THREE.Sprite siempre mira a la
-  // cámara con tamaño en píxeles fijo), un offset en píxeles cae SIEMPRE en
-  // la misma posición relativa al sprite sin importar la vista.
-  //
-  // anchorOffsetPxX positivo = a la DERECHA del centro en pantalla.
-  //   +70px sale del costado derecho del sprite, fuera del círculo.
-  // anchorOffsetPxY = 0 mantiene el conector a la altura del centro del
-  //   sprite (que cae a la altura del pecho/torso del jugador, justo bajo
-  //   los corners cyan del scanner).
   anchorOffsetPxX: 70,
   anchorOffsetPxY: 0,
   rangoMin: 45,
@@ -722,14 +671,7 @@ btnInsightRange.onclick = () => {
 }
 document.querySelector('#cc-controls')?.appendChild(btnInsightRange)
 
-// ── Botón Fichas ──────────────────────────────────────────────────────────
-// Toggle de las fichas 3D de jugadores en la cancha.
-//   - 1er click: corre animarEntradaFichas() — todas las fichas suben del piso
-//   - 2do click: corre animarSalidaFichas() — todas bajan al piso
-//
-// El estado se mantiene en fichasVisibles. Si el modelo gltf aún no terminó
-// de cargar, la animación se encola internamente y se ejecuta cuando esté
-// listo (manejado por createFichasJugadores).
+// ── Botón Fichas ──
 const btnFichas = document.createElement('button')
 btnFichas.className = 'btn'
 btnFichas.textContent = 'Fichas'
@@ -746,14 +688,7 @@ btnFichas.onclick = () => {
 }
 document.querySelector('#cc-controls')?.appendChild(btnFichas)
 
-// ── Botón Conexiones ──────────────────────────────────────────────────────
-// Toggle de las conexiones entre jugadores (componente conexiones-jugadores).
-//   - 1er click: animarEntradaConexiones() — cada línea se "dibuja" desde
-//     el jugador origen hacia el destino con stagger entre conexiones
-//   - 2do click: animarSalidaConexiones() — fade-out de todas las líneas
-//
-// El estado se mantiene en conexionesVisibles. Las conexiones son completamente
-// independientes de las fichas (botón "Fichas" por separado).
+// ── Botón Conexiones ──
 const btnConexiones = document.createElement('button')
 btnConexiones.className = 'btn'
 btnConexiones.textContent = 'Conexiones'
@@ -770,49 +705,28 @@ btnConexiones.onclick = () => {
 }
 document.querySelector('#cc-controls')?.appendChild(btnConexiones)
 
+// ── Botón Radar (Spider Chart) ────────────────────────────────────────────
+// Toggle del panel flotante del radar. El panel usa MeshPhysicalMaterial
+// con clearcoat que recibe los highlights de las luces de la escena.
+const btnRadar = document.createElement('button')
+btnRadar.className = 'btn'
+btnRadar.textContent = 'Radar'
+btnRadar.onclick = () => {
+  grupoSpider3D.visible = !grupoSpider3D.visible
+  btnRadar.classList.toggle('active', grupoSpider3D.visible)
+}
+document.querySelector('#cc-controls')?.appendChild(btnRadar)
 
-// ── BOTÓN DEMO SECUENCIA ──────────────────────────────────────────────────
-// Escena cinemática extendida con 7 pasos narrativos:
-//
-//   PASO 1   Cambio a vista 'Horizontal top' (cenital)
-//   PASO 2   Scanner DOS pasadas completas + textInfo "Analizando > 247 acciones"
-//   PASO 3   Vista 'Diagonal' + zona.show() + textInfo cambia a "Ataque > ..."
-//            + pausa de 5s para apreciar el contexto narrativo
-//   PASO 4   Salida de Zona PRIMERO → DESPUÉS entrada del heatmap volumétrico
-//            + textInfo cambia a "Centros > 73%..."
-//   PASO 5   (secuencial) setView('horizontal perspectiva') → insightCard.show()
-//            → wait 5s. Heatmap se queda visible, texto no cambia.
-//   PASO 6   3 etapas encadenadas:
-//            6a) insightCard.hide() completo
-//            6b) hideHeatmap() + fade-out del textInfo
-//            6c) setView('vertical perspectiva') + entrada del jugador
-//   PASO 7   3 etapas:
-//            7a) seleccionarJugador(#6) — corners cyan
-//            7b) escanearJugador(#6, glitch) — holograma 2.6s
-//            7c) insightRange.show() + textInfo "Líder de recuperación..."
-//   PASO 6   insightCard.hide()
-//   PASO 7   Vista 'Vertical perspectiva' + entrada J. Dos Santos +
-//            selección + holograma glitch + insightRange.show()
-//
-// Toggle: primer click → IDA (secuencia completa)
-//         segundo click → VUELTA (reset, esconde todo en orden inverso)
-//
-// Durante las animaciones el botón se bloquea (demoEnProgreso) para evitar
-// dobles clicks que rompan el flujo.
-const JUGADOR_DEMO = JUGADORES.find(j => j.numero === 6)   // J. Dos Santos
 
-let demoActiva     = false   // estado del toggle (ON al finalizar IDA)
-let demoEnProgreso = false   // bloqueo mientras corren las animaciones
+// ── BOTÓN DEMO SECUENCIA ──
+const JUGADOR_DEMO = JUGADORES.find(j => j.numero === 6)
 
-// Promesa que resuelve después de N segundos usando gsap.delayedCall
+let demoActiva     = false
+let demoEnProgreso = false
+
 function wait(seconds) {
   return new Promise(resolve => gsap.delayedCall(seconds, resolve))
 }
-
-// ── Helpers de visibilidad/animación para componentes 3D ───────────────────
-// El heatmap y la zona NO exponen métodos show/hide propios, así que usamos
-// gsap para animar opacity de sus materiales y el flag .visible del grupo/mesh.
-// Patrón: entrada = visible=true + fade-in opacity. Salida = fade-out + visible=false.
 
 function fadeInMesh(mesh, duration = 0.6, targetOpacity = 1) {
   if (!mesh) return
@@ -836,7 +750,6 @@ function fadeOutMesh(mesh, duration = 0.6) {
   }
 }
 
-// Para grupos (varios meshes hijos), recorremos todos los materiales
 function fadeInGroup(grupo, duration = 0.6, targetOpacity = 1) {
   if (!grupo) return
   grupo.visible = true
@@ -871,12 +784,6 @@ function fadeOutGroup(grupo, duration = 0.6) {
   })
 }
 
-// Helpers para el componente Zona: envuelven sus propias animaciones
-// animarEntrada/animarSalida en promesas para poder usar await en el flujo
-// cinemático. Las animaciones del Zona son complejas (expansión en dos fases:
-// primero crece en Z, luego en X, con nodos que viajan desde el centro hacia
-// las esquinas y fade del label) y NO funcionan con un fade-in genérico de
-// opacity — por eso necesitamos sus métodos nativos.
 function showZona() {
   return new Promise(resolve => {
     if (animarEntradaZona) animarEntradaZona(resolve)
@@ -890,19 +797,6 @@ function hideZona() {
   })
 }
 
-// Helpers para el componente Heatmap volumétrico: envuelven sus animaciones
-// nativas. El heatmap tiene una entrada cinematográfica de ~3s:
-//   - Fade-in de opacidad (0.6s) — aparece la malla plana
-//   - Pausa de 0.8s
-//   - Crecimiento de los picos con elastic.out (2.2s) — los picos "rebotan"
-//     al llegar a su altura final como si los datos emergieran con inercia
-//
-// La salida dura ~2s:
-//   - Colapso lento de los picos hacia el suelo (1.6s power2.inOut)
-//   - Fade-out de opacidad al final (0.5s)
-//
-// Usar fadeInMesh genérico NO funciona porque solo cambia opacity sin
-// animar el mult de altura — los picos aparecen instantáneamente.
 function showHeatmap() {
   return new Promise(resolve => {
     if (animarEntradaHeatmap) animarEntradaHeatmap(resolve)
@@ -916,8 +810,6 @@ function hideHeatmap() {
   })
 }
 
-// Aplica visibilidad a TODAS las tarjetas: solo el jugador con numero=N
-// queda visible. Si N=null, restaura todas visibles.
 function mostrarSoloJugadorEnTarjetas(numero) {
   tarjetasJugadores.forEach(t => {
     const esElegido = (numero == null) || (t.jugador.numero === numero)
@@ -927,7 +819,6 @@ function mostrarSoloJugadorEnTarjetas(numero) {
   })
 }
 
-// Animación de entrada manual SOLO para el jugador especificado
 function entradaJugadorSolo(t) {
   t.sprite.position.y     = -8
   t.spriteFoto.position.y = -8
@@ -951,7 +842,6 @@ function salidaJugadorSolo(t) {
   gsap.to(t.spriteNom.material,  { opacity: 0, duration: 0.25, ease: 'power2.in' })
 }
 
-// Estados auxiliares para saber qué componentes están visibles
 let textInfoYaIniciado = false
 
 const btnDemo = document.createElement('button')
@@ -965,32 +855,18 @@ btnDemo.onclick = async () => {
   demoEnProgreso = true
 
   if (!demoActiva) {
-    // ═══════════════════════ IDA ═══════════════════════
     btnDemo.textContent = 'Demo Secuencia ● activa'
 
-    // ── PASO 1: cambio a vista Horizontal Top ──────────────────────────
     await setView('horizontal top')
 
-    // ── PASO 2: scanner DOS pasadas + textInfo "Analizando > 247 acciones"
-    // Disparamos ambos en paralelo. El textInfo se muestra con su animación
-    // de entrada inicial; si ya estuvo visible antes, usamos replay para
-    // cambiar texto.
     if (!textInfoYaIniciado) {
       textInfo.show()
       textInfoYaIniciado = true
     } else {
       textInfo.replay({ label: 'Analizando', value: '247 acciones' })
     }
-    // scanNTimes(2) resuelve cuando terminan las 2 pasadas + fade-out.
     await scanner.scanNTimes(2)
 
-    // ── PASO 3: vista Diagonal + zona.show() + textInfo cambia ─────────
-    // setView arranca + en paralelo lanzamos la animación de entrada del
-    // componente Zona (que tiene un efecto de expansión propio en dos
-    // fases: crece en Z, luego en X, con nodos saliendo del centro) y
-    // cambiamos el texto del textInfo. Esperamos a que setView termine,
-    // y después aguardamos 5 segundos para que el espectador lea el
-    // texto narrativo y observe la zona iluminada.
     const p3a = setView('diagonal')
     showZona()
     textInfo.replay({
@@ -1000,35 +876,14 @@ btnDemo.onclick = async () => {
     await p3a
     await wait(5.0)
 
-    // ── PASO 4: salida de Zona → entrada del heatmap volumétrico + texto
-    // Primero esperamos a que la Zona termine su animación de salida completa
-    // (~0.55s con sus dos fases: encoge en X y luego en Z). DESPUÉS, en
-    // paralelo, disparamos la entrada del heatmap volumétrico (animación
-    // cinematográfica de ~3s con fade-in de la malla + pausa + crecimiento
-    // elástico de los picos) y el cambio de texto del textInfo.
-    //
-    // NO esperamos a que el heatmap termine su entrada completa aquí —
-    // dejamos que la animación corra mientras el textInfo cambia y luego
-    // el paso 5 toma el control.
     await hideZona()
     showHeatmap()
     textInfo.replay({
       label: 'Centros',
       value: '73% del total son en esta zona',
     })
-    // Esperamos a que la entrada del heatmap esté visualmente completa
-    // (~3s con el rebote elástico) antes de pasar al paso 5
     await wait(3.0)
 
-    // ── PASO 5: secuencial ─────────────────────────────────────────────
-    // Primero esperamos a que la cámara llegue a 'horizontal perspectiva'.
-    // Después disparamos la entrada del insightCard. Después esperamos
-    // 5 segundos para que el espectador lea el card.
-    //
-    // El heatmap volumétrico se queda visible durante todo este paso —
-    // se ocultará en el PASO 6 junto con el insightCard.
-    // El textInfo NO cambia de texto: sigue mostrando "Centros > 73% del
-    // total son en esta zona" del paso anterior.
     await setView('horizontal perspectiva')
     if (!insightVisible) {
       insightCard.show()
@@ -1036,31 +891,20 @@ btnDemo.onclick = async () => {
     }
     await wait(5.0)
 
-    // ── PASO 6: salida del card → salida del heatmap+texto → vista+jugador
-    // Tres etapas encadenadas con timing fluido:
-    //   6a) insightCard.hide() — esperamos a que termine completamente
-    //   6b) En paralelo: hideHeatmap() + fade-out del textInfo (DOM opacity)
-    //   6c) En paralelo: setView('vertical perspectiva') + entrada del jugador
     insightCard.hide()
     insightVisible = false
-    // Esperar a que termine la animación de salida del card (~1s)
     await wait(1.0)
 
-    // 6b) Salida del heatmap + desaparece el textInfo
     if (heatmapGrid.visible) {
       hideHeatmap()
     }
     if (textInfo.el) {
       gsap.to(textInfo.el, { opacity: 0, duration: 0.5, ease: 'power2.in' })
     }
-    // Esperar a que el heatmap colapse (~2s, animación con colapso elástico
-    // + fade-out final). El textInfo termina su fade en 0.5s y queda esperando.
     await wait(2.0)
 
-    // 6c) Cambio de vista + entrada del jugador EN PARALELO
     const p6vista = setView('vertical perspectiva')
 
-    // Activar grupo de jugadores con SOLO el #6 visible
     if (!grupoJugadores.visible) {
       mostrarSoloJugadorEnTarjetas(JUGADOR_DEMO.numero)
       grupoJugadores.visible = true
@@ -1070,72 +914,51 @@ btnDemo.onclick = async () => {
     const t = tarjetasJugadores.find(x => x.jugador.numero === JUGADOR_DEMO.numero)
     if (t) entradaJugadorSolo(t)
 
-    // Esperar a que la cámara llegue Y a que la entrada del jugador termine
-    // (~0.9s). La cámara suele tardar ~1s en llegar, así que esperamos por
-    // ambas cosas con un Promise.all implícito (await la cámara + wait para
-    // la entrada del sprite que corre en paralelo).
     await p6vista
-    await wait(0.3)   // margen extra para que el sprite termine de subir
+    await wait(0.3)
 
-    // ── PASO 7: selección + holograma + insightRange + textInfo ─────────
-    //   7a) seleccionarJugador(#6) — corners cyan
-    //   7b) escanearJugador(#6, glitch) — holograma 2.6s
-    //   7c) En paralelo: insightRange.show() + textInfo nuevo
     seleccionarJugador(JUGADOR_DEMO.numero)
     await wait(0.6)
 
-    // Holograma glitch sobre la foto del jugador
     escanearJugador(JUGADOR_DEMO.numero, { tipo: 'glitch' })
     await wait(2.8)
 
-    // 7c) Insight-range + nuevo texto del textInfo EN PARALELO
     if (!insightRangeVisible) {
       insightRange.show()
       insightRangeVisible = true
     }
-    // Restaurar la opacidad del textInfo (que bajamos a 0 en paso 6) y
-    // cambiar el texto al nuevo mensaje del paso 7.
     if (textInfo.el) {
-      textInfo.el.style.opacity = ''   // restaurar a su valor CSS original
+      textInfo.el.style.opacity = ''
     }
     textInfo.replay({
       label: 'Líder de recuperación',
       value: 'J. Dos Santos es el jugador con más balones recuperados',
     })
-    // Esperar a que termine la entrada del insightRange (~3s)
     await wait(3.0)
 
     demoActiva = true
     demoEnProgreso = false
   } else {
-    // ═══════════════════════ VUELTA ═══════════════════════
     btnDemo.textContent = 'Demo Secuencia'
 
-    // Orden inverso al de la IDA — ocultamos lo último que apareció primero.
-
-    // 1) Ocultar insight-range
     if (insightRangeVisible) {
       insightRange.hide()
       insightRangeVisible = false
     }
     await wait(0.4)
 
-    // 2) Deseleccionar jugador
     deseleccionarJugador()
     await wait(0.3)
 
-    // 3) Cancelar holograma si quedó algo
     if (estaEscaneando(JUGADOR_DEMO.numero)) {
       detenerScan(JUGADOR_DEMO.numero)
       await wait(0.5)
     }
 
-    // 4) Salida del jugador
     const t = tarjetasJugadores.find(x => x.jugador.numero === JUGADOR_DEMO.numero)
     if (t) salidaJugadorSolo(t)
     await wait(0.5)
 
-    // 5) Restaurar todas las cards + ocultar grupo
     mostrarSoloJugadorEnTarjetas(null)
     grupoJugadores.visible = false
     if (t) {
@@ -1144,38 +967,27 @@ btnDemo.onclick = async () => {
       t.spriteNom.material.opacity  = 0
     }
 
-    // 6) Asegurar que heatmap, zona e insightCard estén ocultos
-    //    (en caso de que el usuario haya interrumpido la IDA a mitad)
     if (insightVisible) {
       insightCard.hide()
       insightVisible = false
       await wait(0.3)
     }
-    // Solo intentar ocultar el heatmap si está visible (la animarSalida del
-    // componente puede tener efectos extraños si se llama estando ya oculto)
     if (heatmapGrid.visible) {
       hideHeatmap()
     }
-    // Solo intentar ocultar la zona si estaba visible (animarSalida del
-    // componente puede tener efectos extraños si se llama estando ya oculto)
     if (grupoZona.visible) {
       hideZona()
     }
     await wait(0.7)
 
-    // 7) Ocultar textInfo si está visible
     if (textInfoYaIniciado) {
-      // El textInfo no tiene método hide explícito en su API; lo ocultamos
-      // por opacidad del elemento DOM si existe.
       if (textInfo.el) {
         gsap.to(textInfo.el, { opacity: 0, duration: 0.4, ease: 'power2.in' })
       }
     }
 
-    // 8) Vuelta a vista inicial
     await setView('horizontal perspectiva')
 
-    // Restaurar opacidad del textInfo para próxima vez (sin mostrarlo aún)
     if (textInfo.el) {
       textInfo.el.style.opacity = ''
     }
@@ -1198,11 +1010,6 @@ const materialsMap = {}
 
 function darkenNonBloomed(obj) {
   if (excluidos.has(obj.uuid)) return
-  // Incluimos isSprite además de isMesh: los sprites (fichas-jugadores,
-  // texturas de canvas brillantes) por defecto contribuyen al pase de
-  // bloom y se ven amplificados. Al oscurecerlos durante el bloom pass,
-  // se renderizan tal cual en el pase normal pero NO aportan luz extra
-  // al efecto de bloom.
   if ((obj.isMesh || obj.isSprite) && !obj.layers.isEnabled(BLOOM_LAYER) && !obj.layers.isEnabled(CANCHA_BLOOM_LAYER)) {
     materialsMap[obj.uuid] = obj.material
     obj.material = darkMaterial
@@ -1296,6 +1103,7 @@ function animate() {
   tickZonasPases(camera)
   tickEventos(camera)
   tickSpiderChart(camera)
+  tickVentana3DV2()
   scanner.update(dt)
   insightCard.tick()
   insightHorizontal.tick()

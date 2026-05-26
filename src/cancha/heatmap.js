@@ -262,17 +262,23 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
   }
 
   // ─── Setup inicial con mult = 1 ──────────────────────────────────────────────
+  // IMPORTANTE: opacity inicial = 0 (NO el valor final de 0.68/0.08).
+  // Si arrancamos con opacity al valor final, hay 1-2 frames donde el mesh
+  // se renderiza brillante antes de que animarEntrada baje opacity a 0.
+  // Resultado: la malla "aparece de golpe" antes de que arranque el fade-in.
+  // Solución: el material nace invisible y solo es opacity > 0 durante la
+  // animación de entrada.
   const meshGrid  = new THREE.LineSegments(crearGridCuadros(1), new THREE.LineBasicMaterial({
     vertexColors: true,
     transparent:  true,
-    opacity:      0.68,
+    opacity:      0,
     blending:     THREE.AdditiveBlending,
     depthWrite:   false,
   }))
   const meshSolid = new THREE.Mesh(crearMeshSolido(1), new THREE.MeshBasicMaterial({
     vertexColors: true,
     transparent:  true,
-    opacity:      0.08,
+    opacity:      0,
     side:         THREE.DoubleSide,
     blending:     THREE.AdditiveBlending,
     depthWrite:   false,
@@ -301,31 +307,41 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     matarTween()
 
     estado.mult = 0
+
+    // El material ya arranca en opacity=0 desde su creación, así que no
+    // hace falta resetearlo aquí — directo al fade-in.
     actualizarBuffers(0)
     meshGrid.visible  = true
     meshSolid.visible = true
-    meshGrid.material.opacity  = 0
-    meshSolid.material.opacity = 0
 
     const tl = gsap.timeline({ onComplete })
     tweenActivo = tl
 
-    // Opacidad sube al inicio para ver la malla plana
-    tl.to(meshGrid.material,  { opacity: 0.68, duration: 0.6, ease: 'power2.out' }, 0)
-    tl.to(meshSolid.material, { opacity: 0.08, duration: 0.6, ease: 'power2.out' }, 0)
+    // ─── Fade-in y crecimiento de picos EN PARALELO desde t=0 ───────────
+    // El fade-in (1.0s) termina ANTES que el elastic de los picos (2.2s).
+    // Así el usuario primero ve la malla plana ganando brillo y luego, con
+    // la malla ya completamente visible, los picos crecen orgánicamente
+    // con el rebote del elastic.
+    tl.to(meshGrid.material,  { opacity: 0.68, duration: 1.0, ease: 'power2.out' }, 0)
+    tl.to(meshSolid.material, { opacity: 0.08, duration: 1.0, ease: 'power2.out' }, 0)
 
-    // Pausa de 0.8s en cero — se ve la malla plana sobre la cancha
-    // Luego crece con elastic para el rebote orgánico en los picos
+    // Crecimiento de los picos con elastic — arranca a la vez que el fade-in
+    // pero dura más (3.2s vs 1.0s del fade), por lo que termina después.
     tl.to(estado, {
       mult:     1.0,
-      duration: 2.2,
+      duration: 3.2,
       ease:     'elastic.out(1, 0.5)',
       onUpdate() { actualizarBuffers(estado.mult) },
-    }, 0.8)
+    }, 0)
   }
 
-  // ─── SALIDA — la malla colapsa de vuelta al suelo ────────────────────────────
-  // power3.in acelera hacia el final — los picos caen rápido al final
+  // ─── SALIDA — la malla se derrite hacia el suelo ─────────────────────────────
+  // Altura y opacidad bajan EN PARALELO durante toda la animación. La altura
+  // usa power2.inOut (suave en extremos, acelera al medio — sensación de
+  // "asentarse"). La opacidad usa power2.in (arranca lento manteniendo la
+  // visibilidad de los picos, acelera al final para que cuando la altura
+  // llegue a 0, ya casi no quede mancha visible — evita el "desaparece de
+  // golpe" que se sentía antes).
   function animarSalida(onComplete) {
     matarTween()
 
@@ -339,18 +355,29 @@ export function createHeatmap(scene, datos = DATOS_EJEMPLO, opciones = {}) {
     })
     tweenActivo = tl
 
-    // Colapso lento — los picos bajan suavemente
+    const duracion = 1.6
+
+    // Altura baja durante toda la animación con asentamiento suave
     tl.to(estado, {
       mult:     0.0,
-      duration: 1.6,
+      duration: duracion,
       ease:     'power2.inOut',
       onUpdate() { actualizarBuffers(estado.mult) },
     }, 0)
 
-    // Opacidad se mantiene hasta el final para ver la malla plana
-    // y luego desaparece
-    tl.to(meshGrid.material,  { opacity: 0, duration: 0.5, ease: 'power2.in' }, 1.4)
-    tl.to(meshSolid.material, { opacity: 0, duration: 0.5, ease: 'power2.in' }, 1.4)
+    // Opacidad EN PARALELO con la altura. power2.in arranca lento (los picos
+    // siguen visibles mientras caen) y acelera hacia el final (las manchas
+    // planas se desvanecen progresivamente, no de golpe).
+    tl.to(meshGrid.material,  {
+      opacity:  0,
+      duration: duracion,
+      ease:     'power2.in',
+    }, 0)
+    tl.to(meshSolid.material, {
+      opacity:  0,
+      duration: duracion,
+      ease:     'power2.in',
+    }, 0)
   }
 
   // ─── GUI ─────────────────────────────────────────────────────────────────────

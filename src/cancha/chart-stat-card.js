@@ -2,41 +2,27 @@
 // Componente overlay con gráfica de línea + barras de estadísticas
 // Misma firma que stat-card.js: retorna { wrapper, tickChartStatCard }
 //
+// ANIMACIÓN DE ENTRADA (nueva):
+//   El card aparece primero de FRENTE y plano, luego rota suavemente a una
+//   perspectiva 3D. La secuencia es:
+//     1. Fade-in + scale 0.92 → 1 (de frente, sin rotación)
+//     2. Pausa 400ms (deja que el usuario "lea" la cara plana)
+//     3. Rotación suave a la perspectiva final (rotateY -8°, rotateX 4°)
+//
 // USO EN script.js:
 //
 //   import { createChartStatCard } from './cancha/chart-stat-card.js'
 //
 //   const { wrapper: chartCardEl, tickChartStatCard } = createChartStatCard(scene, camera, {
 //     jugador: { ...porNumero(9), y: 8.0 },
-//     datos: {
-//       valor:       10.1,
-//       titulo:      'centros/partido',
-//       puntoActual: 87,
-//       serie: [
-//         { label: 'Jun', valor: 28 },
-//         { label: 'Jul', valor: 55 },
-//         { label: 'Aug', valor: 48 },
-//         { label: 'Sep', valor: 87 },
-//       ],
-//       stats: [
-//         { label: 'confianza', valor: 0.81 },
-//         { label: 'precisión', valor: 0.74 },
-//       ],
-//     },
+//     datos: { ... },
 //   })
 //
-//   // En el loop de animación — junto a tickStatCard():
+//   // En el loop:
 //   tickChartStatCard()
-//
-//   // Para actualizar datos en caliente:
-//   chartCardEl.__update({
-//     valor: 12.3,
-//     puntoActual: 92,
-//     serie: [...],
-//     stats: [...],
-//   })
 
 import * as THREE from 'three'
+import gsap from 'gsap'
 
 const _pos = new THREE.Vector3()
 
@@ -57,8 +43,11 @@ function inyectarEstilos() {
       position: fixed;
       pointer-events: none;
       user-select: none;
-      transition: opacity 0.25s ease;
       z-index: 10;
+      /* 'perspective' habilita el sistema 3D para los hijos. Valores más
+         altos (1000-2000) dan una perspectiva sutil; valores más bajos
+         (400-600) dan una perspectiva exagerada. */
+      perspective: 1400px;
     }
     .csc-card {
       box-sizing: border-box;
@@ -82,6 +71,11 @@ function inyectarEstilos() {
       font-family: 'Barlow', 'Barlow Condensed', sans-serif;
       position: relative;
       overflow: hidden;
+      /* transform-style 3D para que la rotación se renderice con perspective
+         del wrapper padre. transformOrigin centro para rotar sobre sí mismo. */
+      transform-style: preserve-3d;
+      transform-origin: center center;
+      will-change: transform, opacity;
     }
     .csc-corner-glow {
       position: absolute;
@@ -309,6 +303,11 @@ export function createChartStatCard(scene, camera, opciones = {}) {
   const {
     jugador = { x: 0, z: 0, y: 8.0 },
     datos   = {},
+    // Rotación final en perspectiva (después de la animación de entrada).
+    // Valores típicos: rotateY entre -15° y 15°, rotateX entre -8° y 8°.
+    // Negativo en Y = "se aleja por la derecha". Positivo en X = "se inclina arriba".
+    perspectivaFinalY = -8,    // grados
+    perspectivaFinalX = 4,     // grados
   } = opciones
 
   inyectarEstilos()
@@ -327,10 +326,84 @@ export function createChartStatCard(scene, camera, opciones = {}) {
   // Render inicial
   renderCard(card, datos)
 
+  // Estado inicial del transform: SIN rotación (de frente), sin escala
+  gsap.set(card, {
+    rotationX: 0,
+    rotationY: 0,
+    scale:     0.92,
+    transformPerspective: 1400,
+  })
+
   // API pública para actualizar datos en caliente desde script.js
   wrapper.__update = (nuevosDatos) => {
     Object.assign(datos, nuevosDatos)
     renderCard(card, datos)
+  }
+
+  // ── Animación de entrada — DE FRENTE → PERSPECTIVA ─────────────────────
+  // 3 fases:
+  //   1. Fade-in + scale-up del wrapper (card todavía de frente)
+  //   2. Pausa para que el ojo registre la cara plana
+  //   3. Rotación suave a la perspectiva final
+  function animarEntrada() {
+    // Cancelar tweens previos sobre estos targets si los hubo (toggle rápido)
+    gsap.killTweensOf([wrapper, card])
+
+    // Asegurar visibilidad antes de animar
+    wrapper.style.display = 'block'
+    gsap.set(wrapper, { opacity: 0 })
+    gsap.set(card, {
+      rotationX: 0,
+      rotationY: 0,
+      scale:     0.92,
+      transformPerspective: 1400,
+    })
+
+    const tl = gsap.timeline()
+
+    // 1. Fade-in del wrapper (rápido, 0.4s) + scale del card a 1
+    tl.to(wrapper, { opacity: 1, duration: 0.4, ease: 'power2.out' }, 0)
+    tl.to(card,    { scale: 1,   duration: 0.6, ease: 'back.out(1.3)' }, 0)
+
+    // 2. Pausa "cara plana" — se aprecia el card de frente
+    // (esto sucede entre 0.6s y 1.0s aprox por el delay del siguiente .to)
+
+    // 3. Rotación a la perspectiva final, suavemente
+    tl.to(card, {
+      rotationY: perspectivaFinalY,
+      rotationX: perspectivaFinalX,
+      duration:  1.1,
+      ease:      'power3.inOut',
+    }, 1.0)   // arranca 1.0s después del inicio
+
+    return tl
+  }
+
+  // ── Animación de salida ────────────────────────────────────────────────
+  // Vuelve a plano y se desvanece. Si el usuario apaga el card a mitad de
+  // la entrada, la salida arranca desde el estado actual sin saltos.
+  function animarSalida() {
+    gsap.killTweensOf([wrapper, card])
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        wrapper.style.display = 'none'
+      },
+    })
+
+    tl.to(card, {
+      rotationX: 0,
+      rotationY: 0,
+      duration:  0.4,
+      ease:      'power2.in',
+    }, 0)
+    tl.to(wrapper, {
+      opacity:  0,
+      duration: 0.35,
+      ease:     'power2.in',
+    }, 0.15)
+
+    return tl
   }
 
   // Posición 3D de anclaje
@@ -345,21 +418,28 @@ export function createChartStatCard(scene, camera, opciones = {}) {
     _pos.copy(pos3D)
     _pos.project(camera)
 
+    // Solo actualizar posición si está visible (display !== 'none')
+    if (wrapper.style.display === 'none') return
+
     if (_pos.z > 1) {
       wrapper.style.opacity = '0'
       return
     }
-    wrapper.style.opacity = '1'
 
     const x = ( _pos.x * 0.5 + 0.5) * window.innerWidth
     const y = (-_pos.y * 0.5 + 0.5) * window.innerHeight
 
     wrapper.style.left      = x + 'px'
     wrapper.style.top       = (y - 70) + 'px'     // mismo offset vertical que stat-card.js
+    // OJO: el transform del wrapper se usa para el posicionamiento (translate),
+    // pero el transform del CARD interno es el que tiene la rotación. Así no
+    // pisamos la animación con la lógica de seguimiento al jugador.
     wrapper.style.transform = 'translate(-50%, -100%)'
   }
 
-  // ── Botón de toggle en #cc-controls (igual que stat-card.js) ──────────
+  // ── Botón de toggle en #cc-controls ─────────────────────────────────────
+  // Cambio respecto al original: el toggle ahora dispara animarEntrada() /
+  // animarSalida() en vez de simplemente cambiar display.
   let visible = false
 
   const btn = document.createElement('button')
@@ -367,12 +447,16 @@ export function createChartStatCard(scene, camera, opciones = {}) {
   btn.className   = 'btn'
   btn.addEventListener('click', function () {
     visible = !visible
-    wrapper.style.display = visible ? 'block' : 'none'
+    if (visible) {
+      animarEntrada()
+    } else {
+      animarSalida()
+    }
     this.classList.toggle('active', visible)
   })
 
   const menu = document.getElementById('cc-controls')
   if (menu) menu.appendChild(btn)
 
-  return { wrapper, tickChartStatCard }
+  return { wrapper, tickChartStatCard, animarEntrada, animarSalida }
 }
